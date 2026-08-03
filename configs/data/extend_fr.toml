@@ -1,0 +1,42 @@
+# Extension du volume français.
+#
+# La collecte initiale a buté sur ses `limit` : 911 M de tokens de FineWeb-2 FR
+# pour 1 364 M visés, 308 M de Wikipédia pour 909 M. Ces plafonds étaient
+# prudents ; les sources, elles, se comptent en téraoctets.
+#
+# Point technique : on relit les MÊMES datasets avec une **graine de mélange
+# différente**. `IterableDataset.shuffle` mélange aussi l'ordre des shards, donc
+# une autre graine lit d'autres fichiers en premier et donne un échantillon
+# substantiellement différent. Le recouvrement résiduel est absorbé par la
+# déduplication exacte lors de l'assemblage — elle est faite pour ça.
+
+extends = "data/fr_first.toml"
+
+label = "extend_fr"
+total_tokens = 2_500_000_000
+
+[[sources]]
+name = "huggingface"
+label = "fineweb_fr_extra"
+weight = 0.55
+filters = "fr_text"
+[sources.options]
+dataset = "HuggingFaceFW/fineweb-2"
+config = "fra_Latn"
+lang = "fr"
+limit = 1_400_000
+shuffle_buffer = 10_000
+seed = 7331          # ≠ 1337 : autre tranche du dataset
+
+[[sources]]
+name = "huggingface"
+label = "wikipedia_fr_extra"
+weight = 0.45
+filters = "fr_text"
+[sources.options]
+dataset = "wikimedia/wikipedia"
+config = "20231101.fr"
+lang = "fr"
+limit = 1_400_000    # Wikipédia FR compte ~2,6 M d'articles
+shuffle_buffer = 10_000
+seed = 7331

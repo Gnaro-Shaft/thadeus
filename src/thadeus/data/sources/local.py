@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
+from thadeus.core.artifacts import ARTIFACT_ROOT
 from thadeus.core.logs import get_logger
 from thadeus.data.schema import Document
 from thadeus.data.shard import iter_documents
@@ -66,18 +67,52 @@ def from_local_files(
 def from_shards(
     *,
     label: str | None = None,
-    path: str,
+    path: str | None = None,
+    artifact: str | None = None,
+    source: str | None = None,
     limit: int | None = None,
 ) -> Iterator[Document]:
     """Relit des shards produits par un passage antérieur.
+
+    Deux façons de les désigner :
+
+    - ``path`` : un chemin direct.
+    - ``artifact`` + ``source`` : le **libellé** d'un artefact de corpus et le
+      nom d'une de ses sources. C'est la forme à préférer dans les configs :
+      les artefacts sont nommés par un hash de config qu'on ne connaît pas au
+      moment d'écrire le TOML, et qui change dès qu'un paramètre bouge.
 
     ``label`` réétiquette la source au passage ; laissé à ``None``, chaque
     document garde la sienne — c'est ce qu'on veut pour rejouer un corpus
     multi-sources sans écraser sa composition.
     """
+    if path is None:
+        if not artifact or not source:
+            raise ValueError("préciser `path`, ou bien `artifact` et `source`")
+        path = str(_resolve_shards(artifact, source))
     for doc in iter_documents(path, limit=limit):
         yield (
             doc
             if label is None
             else Document(id=doc.id, text=doc.text, source=label, lang=doc.lang, meta=doc.meta)
         )
+
+
+def _resolve_shards(artifact: str, source: str) -> Path:
+    """Localise les shards d'une source dans le dernier artefact **achevé**.
+
+    Un répertoire sans ``meta.json`` est une collecte interrompue : le prendre
+    pour un corpus valide ferait assembler des données tronquées sans que rien
+    ne le signale.
+    """
+    base = ARTIFACT_ROOT / "data"
+    candidats = [
+        p
+        for p in sorted(base.glob(f"{artifact}-*"))
+        if (p / "meta.json").is_file() and (p / "sources" / source).is_dir()
+    ]
+    if not candidats:
+        raise FileNotFoundError(
+            f"aucun artefact achevé {artifact!r} contenant la source {source!r} sous {base}"
+        )
+    return max(candidats, key=lambda p: (p / "meta.json").stat().st_mtime) / "sources" / source

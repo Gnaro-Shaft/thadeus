@@ -1,0 +1,113 @@
+# Assemblage final — mélange tout ce qui a été collecté, sans rien retélécharger.
+#
+# Trois collectes séparées, pour trois raisons différentes :
+#   fr_first_v2  le corpus principal
+#   code_only    le code, échoué au premier passage (le .env n'était pas chargé)
+#   extend_fr    l'élargissement du français, les `limit` initiales étant trop basses
+#
+# Chaque source est désignée par le LIBELLÉ de son artefact, pas par un chemin :
+# les artefacts sont nommés par un hash de config qu'on ne connaît pas en
+# écrivant ce fichier, et qui change dès qu'un paramètre bouge.
+#
+# Aucun filtre n'est réappliqué : ces documents les ont déjà traversés. Ils
+# repassent en revanche par la déduplication, qui absorbera le recouvrement
+# entre `fineweb_fr` et `fineweb_fr_extra` (mêmes datasets, graines de mélange
+# différentes).
+
+extends = "data/fr_first.toml"
+
+label = "thadeus_v1"
+total_tokens = 4_000_000_000
+
+# --- Français ---
+
+[[sources]]
+name = "shards"
+label = "fineweb_fr"
+weight = 0.24
+[sources.options]
+artifact = "fr_first_v2"
+source = "fineweb_fr"
+
+[[sources]]
+name = "shards"
+label = "fineweb_fr_extra"
+weight = 0.11
+[sources.options]
+artifact = "extend_fr"
+source = "fineweb_fr_extra"
+
+[[sources]]
+name = "shards"
+label = "wikipedia_fr"
+weight = 0.08
+[sources.options]
+artifact = "fr_first_v2"
+source = "wikipedia_fr"
+
+[[sources]]
+name = "shards"
+label = "wikipedia_fr_extra"
+weight = 0.07
+[sources.options]
+artifact = "extend_fr"
+source = "wikipedia_fr_extra"
+
+# Livres du domaine public : 594 M tokens pour 16 000 documents seulement.
+# Un livre pèse ~37 000 tokens, contre ~800 pour une page web.
+[[sources]]
+name = "shards"
+label = "books_fr"
+weight = 0.04
+[sources.options]
+artifact = "fr_first_v2"
+source = "books_fr"
+
+[[sources]]
+name = "shards"
+label = "gutenberg"
+weight = 0.01
+max_repeats = 3.0
+[sources.options]
+artifact = "fr_first_v2"
+source = "gutenberg"
+
+# --- Technique anglais ---
+
+[[sources]]
+name = "shards"
+label = "fineweb_edu"
+weight = 0.25
+[sources.options]
+artifact = "fr_first_v2"
+source = "fineweb_edu"
+
+# --- Code ---
+
+[[sources]]
+name = "shards"
+label = "code_python"
+weight = 0.10
+[sources.options]
+artifact = "code_only"
+source = "code_python"
+
+[[sources]]
+name = "shards"
+label = "code_web"
+weight = 0.05
+[sources.options]
+artifact = "code_only"
+source = "code_web"
+
+# --- Notes personnelles ---
+# Poids symbolique : ~1 M de tokens ne peut pas peser davantage sans être
+# répété des dizaines de fois (D5). Sa vraie place est le fine-tuning.
+[[sources]]
+name = "shards"
+label = "obsidian"
+weight = 0.01
+max_repeats = 3.0
+[sources.options]
+artifact = "fr_first_v2"
+source = "obsidian"
