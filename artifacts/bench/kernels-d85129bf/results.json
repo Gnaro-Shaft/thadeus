@@ -1,0 +1,137 @@
+[
+  {
+    "benchmark": "matmul",
+    "dtype": "bfloat16",
+    "n": 2048,
+    "seconds": 0.0010901166941039264,
+    "tflops": 15.759660664697751,
+    "backend": "mps",
+    "machine": "Apple Silicon GPU (Metal)"
+  },
+  {
+    "benchmark": "matmul",
+    "dtype": "bfloat16",
+    "n": 4096,
+    "seconds": 0.0045769082964397965,
+    "tflops": 30.028775883254763,
+    "backend": "mps",
+    "machine": "Apple Silicon GPU (Metal)"
+  },
+  {
+    "benchmark": "matmul",
+    "dtype": "bfloat16",
+    "n": 8192,
+    "seconds": 0.040777133300434795,
+    "tflops": 26.963926563328968,
+    "backend": "mps",
+    "machine": "Apple Silicon GPU (Metal)"
+  },
+  {
+    "benchmark": "matmul",
+    "dtype": "float16",
+    "n": 2048,
+    "seconds": 0.0005798249971121549,
+    "tflops": 29.629404164299793,
+    "backend": "mps",
+    "machine": "Apple Silicon GPU (Metal)"
+  },
+  {
+    "benchmark": "matmul",
+    "dtype": "float16",
+    "n": 4096,
+    "seconds": 0.0046305957948789,
+    "tflops": 29.680619851120976,
+    "backend": "mps",
+    "machine": "Apple Silicon GPU (Metal)"
+  },
+  {
+    "benchmark": "matmul",
+    "dtype": "float16",
+    "n": 8192,
+    "seconds": 0.040351266600191595,
+    "tflops": 27.248503465087744,
+    "backend": "mps",
+    "machine": "Apple Silicon GPU (Metal)"
+  },
+  {
+    "benchmark": "matmul",
+    "dtype": "float32",
+    "n": 2048,
+    "seconds": 0.002316433296073228,
+    "tflops": 7.416517977497119,
+    "backend": "mps",
+    "machine": "Apple Silicon GPU (Metal)"
+  },
+  {
+    "benchmark": "matmul",
+    "dtype": "float32",
+    "n": 4096,
+    "seconds": 0.018728637497406452,
+    "tflops": 7.3384384470590875,
+    "backend": "mps",
+    "machine": "Apple Silicon GPU (Metal)"
+  },
+  {
+    "benchmark": "matmul",
+    "dtype": "float32",
+    "n": 8192,
+    "seconds": 0.1585494583938271,
+    "tflops": 6.934817935769171,
+    "backend": "mps",
+    "machine": "Apple Silicon GPU (Metal)"
+  },
+  {
+    "benchmark": "bandwidth",
+    "dtype": "bfloat16",
+    "megabytes": 256,
+    "seconds": 0.002640458301175386,
+    "gb_per_s": 203.3248969548259,
+    "backend": "mps",
+    "machine": "Apple Silicon GPU (Metal)"
+  },
+  {
+    "benchmark": "bandwidth",
+    "dtype": "float32",
+    "megabytes": 256,
+    "seconds": 0.00207720419857651,
+    "gb_per_s": 258.4584184683976,
+    "backend": "mps",
+    "machine": "Apple Silicon GPU (Metal)"
+  },
+  {
+    "benchmark": "attention",
+    "dtype": "bfloat16",
+    "batch": 8,
+    "heads": 12,
+    "seq_len": 1024,
+    "head_dim": 64,
+    "seconds": 0.0019634791067801418,
+    "tflops": 6.562281128180485,
+    "backend": "mps",
+    "machine": "Apple Silicon GPU (Metal)"
+  },
+  {
+    "benchmark": "attention",
+    "dtype": "bfloat16",
+    "batch": 8,
+    "heads": 12,
+    "seq_len": 2048,
+    "head_dim": 64,
+    "seconds": 0.007574604207184166,
+    "tflops": 6.804264109683386,
+    "backend": "mps",
+    "machine": "Apple Silicon GPU (Metal)"
+  },
+  {
+    "benchmark": "attention",
+    "dtype": "bfloat16",
+    "batch": 8,
+    "heads": 12,
+    "seq_len": 4096,
+    "head_dim": 64,
+    "seconds": 0.02976768750231713,
+    "tflops": 6.9255776147190655,
+    "backend": "mps",
+    "machine": "Apple Silicon GPU (Metal)"
+  }
+]

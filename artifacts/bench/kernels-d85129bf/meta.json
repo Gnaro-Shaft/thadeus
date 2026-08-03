@@ -1,0 +1,65 @@
+{
+  "stage": "bench",
+  "label": "kernels",
+  "hash": "d85129bf",
+  "created_at": "2026-08-03T18:25:37+00:00",
+  "git": null,
+  "environment": {
+    "host": "b9a520a1",
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "python": "3.12.13"
+  },
+  "config": {
+    "label": "kernels",
+    "device": "auto",
+    "seed": 1337,
+    "defaults": {
+      "warmup": 3,
+      "iters": 10
+    },
+    "benchmarks": [
+      {
+        "name": "matmul",
+        "sizes": [
+          2048,
+          4096,
+          8192
+        ],
+        "dtypes": [
+          "bfloat16",
+          "float16",
+          "float32"
+        ]
+      },
+      {
+        "name": "bandwidth",
+        "megabytes": 256,
+        "dtypes": [
+          "bfloat16",
+          "float32"
+        ]
+      },
+      {
+        "name": "attention",
+        "batch": 8,
+        "heads": 12,
+        "head_dim": 64,
+        "seq_lens": [
+          1024,
+          2048,
+          4096
+        ]
+      }
+    ]
+  },
+  "device": {
+    "backend": "mps",
+    "name": "Apple Silicon GPU (Metal)",
+    "torch_version": "2.13.0",
+    "bf16": true,
+    "total_memory_gb": 0.0082550048828125,
+    "usable_memory_gb": 51.84001159667969,
+    "unified_memory": true
+  },
+  "n_results": 14
+}
