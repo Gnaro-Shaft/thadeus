@@ -86,6 +86,7 @@ src/thadeus/
   core/           config, registry, device, seeding, artifacts, logs
   bench/          étage 0 — mesure de la machine, identique Mac et H100
   data/           étage 1 — sources, nettoyage, dédup, mélange, shards
+  tokenizer/      étage 2 — BPE byte-level entraîné sur notre corpus
 tests/
 artifacts/        sorties versionnées par hash de config (non versionné en git)
 ```
@@ -106,3 +107,34 @@ Après chaque exécution, lire `report.json` dans l'artefact : composition deman
 contre composition obtenue, et taux de rejet **par filtre et par source**. La
 ventilation est le seul niveau interprétable — sur le run de fumée, Wikipédia FR
 perd 26,7 % quand FineWeb-Edu perd 0,2 %, et c'est cet écart qui informe.
+
+## Le tokenizer
+
+```bash
+.venv/bin/python scripts/train_tokenizer.py --config tokenizer/bpe32k.toml
+.venv/bin/python scripts/compare_tokenizers.py --ours bpe32k
+```
+
+BPE byte-level entraîné sur notre corpus, avec un motif de pré-tokenisation
+adapté au français : les élisions (`l'`, `qu'`, `jusqu'`…) restent rattachées au
+mot-outil, là où le motif de GPT-2 les coupe systématiquement.
+
+Fertilité mesurée (tokens/mot, plus bas = plus efficace), corpus de fumée :
+
+| Tokenizer | Vocab | Global | FR | EN |
+|---|---|---|---|---|
+| **thadeus** | **16 k** | **1,690** | **1,747** | 1,558 |
+| qwen2.5 | 150 k | 1,712 | 1,879 | 1,319 |
+| mistral | 32 k | 1,934 | 2,131 | 1,472 |
+| gpt2 | 50 k | 1,950 | 2,218 | 1,320 |
+
+**−21 % de tokens sur le français** vs GPT-2, −13,3 % sur le mélange complet.
+Notre vocabulaire de 16 k bat celui de Qwen2.5 à 150 k sur le français : un
+vocabulaire dédié à une distribution bat un vocabulaire dix fois plus gros
+partagé entre cent langues.
+
+Le troc est assumé et mesuré : **on est 18 % moins efficace que GPT-2 sur
+l'anglais**, parce que le vocabulaire est dépensé en français.
+
+Deux gains distincts, à ne pas confondre : entraîner le vocabulaire sur notre
+corpus vaut **−21 %**, le motif de pré-tokenisation française **−2 %** de plus.
