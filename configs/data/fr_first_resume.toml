@@ -42,6 +42,34 @@ weight = 0.25
 [sources.options]
 path = "artifacts/data/fr_first-ae1b4e1b/sources/fineweb_edu"
 
+# --- Code : licence the-stack acceptée le 2026-08-03 ---
+
+[[sources]]
+name = "huggingface"
+label = "code_python"
+weight = 0.10
+filters = "code"
+[sources.options]
+dataset = "bigcode/the-stack-dedup"
+data_dir = "data/python"
+lang = "code"
+limit = 250_000
+shuffle_buffer = 5_000
+text_field = "content"
+
+[[sources]]
+name = "huggingface"
+label = "code_web"
+weight = 0.05
+filters = "code"
+[sources.options]
+dataset = "bigcode/the-stack-dedup"
+data_dir = "data/javascript"
+lang = "code"
+limit = 120_000
+shuffle_buffer = 5_000
+text_field = "content"
+
 # --- Jamais collectées : books_fr avait échoué en silence ---
 
 [[sources]]

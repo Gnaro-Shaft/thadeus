@@ -45,6 +45,7 @@ def from_huggingface(
     label: str,
     dataset: str,
     config: str | None = None,
+    data_dir: str | None = None,
     split: str = "train",
     lang: str = "unknown",
     limit: int | None = None,
@@ -61,6 +62,11 @@ def from_huggingface(
             identifiants de dataset avec des configs différentes.
         dataset: identifiant HF ("wikimedia/wikipedia").
         config: sous-configuration ("20231101.fr", "fra_Latn").
+        data_dir: sous-répertoire du dépôt. Certains datasets sélectionnent
+            ainsi leurs sous-ensembles au lieu d'utiliser des configurations —
+            `the-stack-dedup` choisit son langage par `data_dir="data/python"`.
+            Confondre les deux donne une erreur de configuration introuvable
+            qui ressemble beaucoup à un problème de licence.
         lang: langue déclarée, que le filtre de langue vérifiera ensuite.
         limit: nombre maximal de documents à produire.
         shuffle_buffer: taille du tampon de mélange. À 0, on prend la tranche
@@ -70,8 +76,10 @@ def from_huggingface(
     """
     from datasets import load_dataset  # import tardif : dépendance lourde
 
-    log.info("Source %s : %s%s (limite=%s)", label, dataset, f":{config}" if config else "", limit)
-    stream = load_dataset(dataset, config, split=split, streaming=True)
+    suffixe = f":{config}" if config else (f"/{data_dir}" if data_dir else "")
+    log.info("Source %s : %s%s (limite=%s)", label, dataset, suffixe, limit)
+    extra = {"data_dir": data_dir} if data_dir else {}
+    stream = load_dataset(dataset, config, split=split, streaming=True, **extra)
     if shuffle_buffer:
         stream = stream.shuffle(seed=seed, buffer_size=shuffle_buffer)
 

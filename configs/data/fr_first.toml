@@ -138,23 +138,44 @@ lang = "en"
 limit = 700_000
 shuffle_buffer = 10_000
 
-# --- Code : 15 % --- EN ATTENTE D'ARBITRAGE
+# --- Code : 15 % ---
 #
-# `codeparrot/github-code-clean` a fait échouer la collecte : c'est un dataset
-# « à script », et datasets >= 3.0 a supprimé leur support. Ma vérification
-# initiale avait contrôlé l'existence et l'accès, pas la CHARGEABILITÉ.
+# `bigcode/the-stack-dedup`, licence acceptée sur le Hub le 2026-08-03.
 #
-# Testé par chargement réel (2026-08-03) :
-#   the-stack-smol / the-stack-dedup / starcoderdata / tiny-codes  -> RESTREINTS
-#   commitpackft / xlcost-text-to-code                             -> à script
-#   smollm-corpus:python-edu   -> ne contient que des blob_id (fetch S3 requis)
-#   christopher/rosetta-code   -> OUVERT, champ `code`, mais petit
-#   nvidia/OpenCodeInstruct    -> OUVERT, volumineux, format instruction
+# Piège rencontré : ce dataset sélectionne son langage par `data_dir`, pas par
+# `config`. Avec `config`, l'erreur renvoyée est « BuilderConfig introuvable »,
+# qui ressemble à s'y méprendre à un refus de licence — j'ai failli conclure
+# que la licence n'était pas acceptée alors qu'elle l'était.
 #
-# Les meilleures sources demandent d'accepter une licence sur le Hub (un clic).
-# En attendant, le code est retiré du pré-entraînement — ce qui reste cohérent
-# avec D4 : le code se rattrape en fine-tuning (Phase 8) sur une base
-# linguistique solide.
+# Python domine volontairement : c'est le langage de travail de Genaro, et un
+# corpus de code étalé sur vingt langages à 15 % du budget n'apprendrait rien
+# de chacun (même raisonnement que D4, un cran plus bas).
+
+[[sources]]
+name = "huggingface"
+label = "code_python"
+weight = 0.10
+filters = "code"
+[sources.options]
+dataset = "bigcode/the-stack-dedup"
+data_dir = "data/python"
+lang = "code"
+limit = 250_000
+shuffle_buffer = 5_000
+text_field = "content"
+
+[[sources]]
+name = "huggingface"
+label = "code_web"
+weight = 0.05
+filters = "code"
+[sources.options]
+dataset = "bigcode/the-stack-dedup"
+data_dir = "data/javascript"
+lang = "code"
+limit = 120_000
+shuffle_buffer = 5_000
+text_field = "content"
 
 # --- Littérature française classique (local) ---
 # 18 romans du domaine public : Hugo, Zola, Dumas, Flaubert, Stendhal, Voltaire.
