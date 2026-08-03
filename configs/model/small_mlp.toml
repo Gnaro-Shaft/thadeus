@@ -1,0 +1,9 @@
+# Témoin : MLP classique + LayerNorm, c'est-à-dire l'architecture GPT-2.
+# Permet de mesurer ce que SwiGLU et RMSNorm apportent réellement sur notre
+# corpus, au lieu de le supposer d'après les articles.
+extends = "model/small.toml"
+
+norm = "layernorm"
+
+[ffn]
+name = "mlp"

@@ -1,0 +1,30 @@
+# Modèle de référence — ~81 M paramètres.
+#
+# Dimensionné par la mesure, pas par un chiffre rond :
+#   - d_model = 640 est un plancher imposé par le vocabulaire. À 512, la table
+#     d'embedding pèserait 42 % du modèle ; à 640 elle tombe à 25 %.
+#   - 14 couches donnent ~22 h de Mac ou ~40 min de H100 pour 1,7 Md de tokens.
+#   - GQA 10:2 divise le cache clé/valeur par 5 — sans effet sur l'entraînement,
+#     décisif en génération.
+
+vocab_size = 32_000        # hypothèse de travail arrêtée le 2026-08-03
+d_model = 640
+n_layers = 14
+max_seq_len = 1024
+rope_base = 10_000.0
+tie_embeddings = true      # ~20 M de paramètres économisés, soit 25 % du modèle
+
+norm = "rmsnorm"
+init_std = 0.02
+scale_residual_init = true
+
+[attention]
+name = "gqa"
+n_heads = 10
+n_kv_heads = 2
+head_dim = 64
+qk_norm = true
+bias = false
+
+[ffn]
+name = "swiglu"

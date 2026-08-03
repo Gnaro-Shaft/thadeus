@@ -1,0 +1,9 @@
+# Témoin : attention multi-têtes classique (pas de regroupement clé/valeur).
+# Seule différence avec small.toml, donc l'écart mesuré est imputable à GQA seul.
+extends = "model/small.toml"
+
+[attention]
+name = "gqa"
+n_heads = 10
+n_kv_heads = 10
+head_dim = 64

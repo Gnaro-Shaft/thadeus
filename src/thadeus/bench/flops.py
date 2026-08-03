@@ -28,7 +28,32 @@ __all__ = [
 # Une crête de fiche technique conduit systématiquement à surestimer ce qu'on
 # peut faire ; on ne compare qu'à ce qu'on a soi-même chronométré.
 MEASURED_PEAK_TFLOPS: dict[str, float] = {
-    "m5_pro_20c": 29.5,  # MacBook M5 Pro, 20 cœurs GPU — mesuré le 2026-08-03
+    "m5_pro_20c": 30.0,  # MacBook M5 Pro, 20 cœurs GPU — mesuré le 2026-08-03
+}
+
+# Débit **réellement atteint** en boucle d'entraînement complète (avant, arrière,
+# pas d'optimiseur), à distinguer soigneusement de la crête matmul ci-dessus.
+#
+# Mesuré en Phase 3 sur un modèle de 80,7 M, batch 8, seq 1024 :
+#
+#   eager           3,1 TFLOPS   MFU 10 %    <- ne jamais dimensionner un run là-dessus
+#   torch.compile   8,3 TFLOPS   MFU 28 %    <- le seul mode à utiliser
+#
+# **`torch.compile` vaut un facteur 3,00 sur MPS.** Ce n'est pas une optimisation
+# de confort : c'est la différence entre 72 h et 27 h pour 1,7 Md de tokens sur
+# le Mac. Le coût de compilation (~15 s) est négligeable sur un run long.
+#
+# La leçon de méthode, elle, a coûté du temps : on a d'abord traqué des gains de
+# quelques pourcents sur les opérations élément par élément **avant** d'avoir
+# établi la bonne référence. Un facteur 3 attendait dans un drapeau. Toujours
+# épuiser les réglages globaux avant d'optimiser le détail.
+#
+# Règle qui en découle : **on ne dimensionne un run qu'avec un débit mesuré sur
+# la machine visée, dans le mode où le run tournera**. Sur H100, ces deux chiffres
+# devront être remesurés avant d'engager le moindre crédit.
+MEASURED_EFFECTIVE_TFLOPS: dict[str, float] = {
+    "m5_pro_20c": 8.3,  # avec torch.compile — le mode par défaut du projet
+    "m5_pro_20c_eager": 3.1,  # sans compilation, pour référence
 }
 
 
