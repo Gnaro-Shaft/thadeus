@@ -6,7 +6,9 @@ device = "auto"
 compile = true              # x3,00 mesuré sur MPS en Phase 3
 
 model_config_path = "model/small.toml"
-tokens_label = "fr_first"
+# Le corpus tokenisé final. Le libellé a changé à l'assemblage (`fr_first` était
+# la collecte principale, `thadeus_v1` est le mélange des quatre collectes).
+tokens_label = "thadeus_v1"
 
 # Lot effectif = batch_size x grad_accum x seq_len = 12 x 8 x 1024 ≈ 98 k tokens.
 # C'est le lot effectif qui gouverne la stabilité, pas batch_size seul.
