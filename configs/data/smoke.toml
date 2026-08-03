@@ -1,0 +1,46 @@
+# Corpus de fumée : la chaîne complète en une minute, sur de petits volumes.
+# Sert à vérifier que sources, filtres, dédup, mélange et shards s'enchaînent —
+# jamais à juger de la qualité des données.
+
+extends = "data/fr_first.toml"
+
+label = "smoke"
+total_tokens = 3_000_000
+
+[shard]
+max_documents = 2_000
+max_bytes = 33_554_432
+
+[[sources]]
+name = "huggingface"
+label = "wikipedia_fr"
+weight = 0.5
+filters = "fr_text"
+[sources.options]
+dataset = "wikimedia/wikipedia"
+config = "20231101.fr"
+lang = "fr"
+limit = 3_000
+shuffle_buffer = 1_000
+
+[[sources]]
+name = "huggingface"
+label = "fineweb_edu"
+weight = 0.3
+filters = "en_text"
+[sources.options]
+dataset = "HuggingFaceFW/fineweb-edu"
+lang = "en"
+limit = 3_000
+shuffle_buffer = 1_000
+
+[[sources]]
+name = "obsidian"
+label = "obsidian"
+weight = 0.2
+max_repeats = 3.0
+filters = "notes"
+[sources.options]
+vault = "~/dGnaro"
+lang = "fr"
+min_words = 30

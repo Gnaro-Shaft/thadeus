@@ -1,0 +1,79 @@
+# Reprise de la collecte interrompue du 2026-08-03.
+#
+# La collecte initiale a planté sur `github_code` après ~3 Go et plusieurs
+# heures, emportant tout le run — l'artefact n'a jamais reçu son `meta.json`,
+# donc rien n'était exploitable. Mais les shards par source, eux, étaient
+# intacts sur le disque.
+#
+# Cette config les réinjecte via la source `shards` plutôt que de tout
+# retélécharger : ~1,24 Md de tokens récupérés, plusieurs heures économisées.
+# C'est exactement l'intérêt d'avoir séparé collecte et mélange par un passage
+# sur disque (Phase 1) — la sortie d'un étage reste une entrée valide.
+#
+# Les sources déjà collectées ne repassent PAS par les filtres : elles les ont
+# déjà traversés. Elles passent en revanche par la déduplication, pour que les
+# nouvelles sources soient dédupliquées contre elles.
+
+extends = "data/fr_first.toml"
+
+label = "fr_first_v2"
+total_tokens = 4_000_000_000   # cible D7 : 3,76 Md pour le modèle de 188 M
+
+# --- Récupéré du run interrompu ---
+
+[[sources]]
+name = "shards"
+label = "wikipedia_fr"
+weight = 0.20
+[sources.options]
+path = "artifacts/data/fr_first-ae1b4e1b/sources/wikipedia_fr"
+
+[[sources]]
+name = "shards"
+label = "fineweb_fr"
+weight = 0.30
+[sources.options]
+path = "artifacts/data/fr_first-ae1b4e1b/sources/fineweb_fr"
+
+[[sources]]
+name = "shards"
+label = "fineweb_edu"
+weight = 0.25
+[sources.options]
+path = "artifacts/data/fr_first-ae1b4e1b/sources/fineweb_edu"
+
+# --- Jamais collectées : books_fr avait échoué en silence ---
+
+[[sources]]
+name = "huggingface"
+label = "books_fr"
+weight = 0.05
+filters = "fr_text"
+[sources.options]
+dataset = "PleIAs/French-PD-Books"
+lang = "fr"
+limit = 20_000
+shuffle_buffer = 2_000
+text_field = "complete_text"
+
+[[sources]]
+name = "gutenberg"
+label = "gutenberg"
+weight = 0.03
+max_repeats = 3.0
+filters = "fr_text"
+[sources.options]
+root = "~/LLM_personelle/datasets/gutenberg"
+lang = "fr"
+target_words = 1200
+
+[[sources]]
+name = "obsidian"
+label = "obsidian"
+weight = 0.05
+max_repeats = 3.0
+filters = "notes"
+[sources.options]
+vault = "~/dGnaro"
+lang = "fr"
+min_words = 30

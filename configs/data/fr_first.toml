@@ -1,0 +1,190 @@
+# Corpus « français d'abord ».
+#
+# Pari : à ~85 M paramètres, viser deux compétences à la fois (français ET code)
+# est le meilleur moyen de n'en avoir aucune. Le français correct est atteignable
+# à cette échelle, le code utile ne l'est pas — il se rattrapera en fine-tuning
+# (Phase 8) sur une base linguistique solide.
+#
+# Composition visée : 55 % français · 25 % technique EN · 15 % code · 5 % notes
+# Composition obtenue : voir `report.json` — le planificateur de mélange ne
+# comble jamais un manque en silence.
+
+label = "fr_first"
+total_tokens = 2_000_000_000
+seed = 1337
+
+[dedup]
+enabled = true
+exact = true
+bands = 16          # seuil Jaccard effectif ~0,71
+rows = 8
+shingle_size = 5
+max_words = 5000
+
+[shard]
+max_documents = 50_000
+max_bytes = 268_435_456
+
+# ---------------------------------------------------------------------------
+# Chaînes de nettoyage. Une source en référence une par son nom.
+# ---------------------------------------------------------------------------
+[filters]
+
+# Prose française. L'ordre est choisi : les filtres qui coûtent peu et rejettent
+# beaucoup passent en premier, pour ne pas payer un comptage de n-grammes sur un
+# document qui sera de toute façon écarté pour sa longueur.
+fr_text = [
+    { name = "normalize" },
+    { name = "word_count", min_words = 60, max_words = 100_000 },
+    { name = "mean_word_length", lo = 3.0, hi = 10.0 },
+    { name = "alpha_ratio", min_ratio = 0.75 },
+    { name = "symbol_ratio", max_ratio = 0.1 },
+    { name = "drop_short_lines", min_words = 3, keep_ratio = 0.5 },
+    { name = "duplicate_lines", max_ratio = 0.3 },
+    { name = "repeated_ngrams", n = 10, max_ratio = 0.2 },
+    { name = "boilerplate" },
+    { name = "language_is", lang = "fr", min_score = 0.06, margin = 1.2 },
+]
+
+# Prose anglaise (documentation et contenu éducatif).
+en_text = [
+    { name = "normalize" },
+    { name = "word_count", min_words = 60, max_words = 100_000 },
+    { name = "mean_word_length", lo = 3.0, hi = 9.0 },
+    { name = "alpha_ratio", min_ratio = 0.75 },
+    { name = "symbol_ratio", max_ratio = 0.1 },
+    { name = "duplicate_lines", max_ratio = 0.3 },
+    { name = "repeated_ngrams", n = 10, max_ratio = 0.2 },
+    { name = "boilerplate", terms = [
+        "terms of service", "privacy policy", "all rights reserved",
+        "accept cookies", "enable javascript", "lorem ipsum",
+    ] },
+    { name = "language_is", lang = "en", min_score = 0.06, margin = 1.2 },
+]
+
+# Code source. Presque tous les filtres de prose sont hors sujet ici et
+# détruiraient le corpus : du code a des lignes courtes, des mots longs, une
+# forte densité de symboles et aucun mot-outil. On ne garde que l'anti-répétition
+# (fichiers générés) et les bornes de taille.
+# `unify_apostrophes = false` est essentiel : dans du code, une apostrophe
+# typographique n'est pas un habillage, c'est un caractère de chaîne.
+code = [
+    { name = "normalize", unify_apostrophes = false },
+    { name = "word_count", min_words = 20, max_words = 50_000 },
+    { name = "repeated_ngrams", n = 20, max_ratio = 0.5 },
+]
+
+# Notes personnelles : déjà propres, filtrage minimal.
+notes = [
+    { name = "normalize" },
+    { name = "word_count", min_words = 40, max_words = 50_000 },
+]
+
+# ---------------------------------------------------------------------------
+# Sources
+# ---------------------------------------------------------------------------
+
+# --- Français : 55 % ---
+
+[[sources]]
+name = "huggingface"
+label = "wikipedia_fr"
+weight = 0.20
+filters = "fr_text"
+[sources.options]
+dataset = "wikimedia/wikipedia"
+config = "20231101.fr"
+lang = "fr"
+limit = 400_000
+shuffle_buffer = 10_000
+
+[[sources]]
+name = "huggingface"
+label = "fineweb_fr"
+weight = 0.30
+filters = "fr_text"
+[sources.options]
+dataset = "HuggingFaceFW/fineweb-2"
+config = "fra_Latn"
+lang = "fr"
+limit = 1_200_000
+shuffle_buffer = 10_000
+
+[[sources]]
+name = "huggingface"
+label = "books_fr"
+weight = 0.05
+filters = "fr_text"
+[sources.options]
+dataset = "PleIAs/French-PD-Books"
+lang = "fr"
+limit = 20_000
+shuffle_buffer = 2_000
+# Explicite, jamais deviné : ce dataset nomme son texte `complete_text`, absent
+# de la liste des champs candidats. Résultat au premier essai : zéro document
+# produit, sans la moindre erreur. Une source entière disparue en silence.
+text_field = "complete_text"
+
+# --- Technique anglais : 25 % ---
+
+[[sources]]
+name = "huggingface"
+label = "fineweb_edu"
+weight = 0.25
+filters = "en_text"
+[sources.options]
+dataset = "HuggingFaceFW/fineweb-edu"
+lang = "en"
+limit = 700_000
+shuffle_buffer = 10_000
+
+# --- Code : 15 % --- EN ATTENTE D'ARBITRAGE
+#
+# `codeparrot/github-code-clean` a fait échouer la collecte : c'est un dataset
+# « à script », et datasets >= 3.0 a supprimé leur support. Ma vérification
+# initiale avait contrôlé l'existence et l'accès, pas la CHARGEABILITÉ.
+#
+# Testé par chargement réel (2026-08-03) :
+#   the-stack-smol / the-stack-dedup / starcoderdata / tiny-codes  -> RESTREINTS
+#   commitpackft / xlcost-text-to-code                             -> à script
+#   smollm-corpus:python-edu   -> ne contient que des blob_id (fetch S3 requis)
+#   christopher/rosetta-code   -> OUVERT, champ `code`, mais petit
+#   nvidia/OpenCodeInstruct    -> OUVERT, volumineux, format instruction
+#
+# Les meilleures sources demandent d'accepter une licence sur le Hub (un clic).
+# En attendant, le code est retiré du pré-entraînement — ce qui reste cohérent
+# avec D4 : le code se rattrape en fine-tuning (Phase 8) sur une base
+# linguistique solide.
+
+# --- Littérature française classique (local) ---
+# 18 romans du domaine public : Hugo, Zola, Dumas, Flaubert, Stendhal, Voltaire.
+# ~2,95 M tokens seulement — trop peu pour peser (même limite que le Vault, D5),
+# mais d'un registre littéraire qu'aucune source web ne fournit. Sa vraie valeur
+# est ailleurs : c'est un excellent jeu d'évaluation du français.
+[[sources]]
+name = "gutenberg"
+label = "gutenberg"
+weight = 0.03
+max_repeats = 3.0
+filters = "fr_text"
+[sources.options]
+root = "~/LLM_personelle/datasets/gutenberg"
+lang = "fr"
+target_words = 1200
+
+# --- Notes personnelles ---
+# Poids demandé 5 %, mais le Vault ne pèse que ~1 M de tokens : il faudrait le
+# répéter ~85 fois pour tenir ce poids, ce qui serait de la mémorisation et non
+# de l'apprentissage. `max_repeats = 3` borne cette dérive, et le plan de
+# mélange signalera l'écart au lieu de le masquer. Sa vraie place est le
+# fine-tuning (Phase 8).
+[[sources]]
+name = "obsidian"
+label = "obsidian"
+weight = 0.05
+max_repeats = 3.0
+filters = "notes"
+[sources.options]
+vault = "~/dGnaro"
+lang = "fr"
+min_words = 30

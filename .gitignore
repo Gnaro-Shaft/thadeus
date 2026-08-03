@@ -7,19 +7,23 @@ __pycache__/
 .env
 .env.*
 
-# Sorties de la chaîne — reproductibles à partir des configs, jamais versionnées
-data/
-checkpoints/
+# Sorties de la chaîne — reproductibles à partir des configs, jamais versionnées.
+# La barre oblique INITIALE ancre le motif à la racine du dépôt. Sans elle,
+# `data/` correspondait à *tout* répertoire nommé `data`, à n'importe quelle
+# profondeur — et excluait donc `src/thadeus/data/` et `configs/data/`.
+# Résultat : tout l'étage données (13 modules) et ses configs n'ont jamais été
+# versionnés, alors que `git status` restait propre et que les commits passaient.
+/data/
+/checkpoints/
 
 # Les artefacts sont exclus... sauf les mesures de banc : elles sont minuscules,
 # et tout l'intérêt de l'étage 0 est de comparer Mac et H100 dans le temps.
 # Il faut ré-autoriser les *répertoires* intermédiaires : git ne descend jamais
 # dans un dossier exclu, donc une négation seule sur le fichier reste sans effet.
-artifacts/**
-!artifacts/bench/
-!artifacts/bench/**/
-!artifacts/bench/**/meta.json
-!artifacts/bench/**/results.json
-!artifacts/bench/**/results.json
+/artifacts/**
+!/artifacts/bench/
+!/artifacts/bench/**/
+!/artifacts/bench/**/meta.json
+!/artifacts/bench/**/results.json
 
 .DS_Store
