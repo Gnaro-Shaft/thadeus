@@ -164,7 +164,13 @@ class SampleHook:
 
         model = unwrap(trainer.model)
         ids = torch.tensor([trainer.codec.encode(self.prompt)], device=trainer.device)
-        out = model.generate(ids, max_new_tokens=self.max_new_tokens, temperature=0.8, top_k=50)
+        out = model.generate(
+            ids,
+            max_new_tokens=self.max_new_tokens,
+            temperature=0.8,
+            top_k=50,
+            forbidden=trainer.codec.service_ids,
+        )
         model.train()
         texte = trainer.codec.decode(out[0].tolist())
         log.info("pas %6d · échantillon : %s", state.step, texte.replace("\n", " ⏎ ")[:300])

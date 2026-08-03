@@ -1,0 +1,12 @@
+# Évaluation de fumée : vérifie que la chaîne d'évaluation tourne.
+extends = "eval/default.toml"
+
+label = "eval_smoke"
+run_label = "smoke"
+model_config_path = "model/tiny4k.toml"
+tokenizer_label = "smoke_bpe"
+corpus_label = "smoke"
+max_documents = 40
+seq_len = 128
+gutenberg_documents = 20
+max_new_tokens = 24

@@ -15,6 +15,8 @@ de mantisse arrondirait à zéro.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -138,6 +140,7 @@ class Thadeus(nn.Module):
         max_new_tokens: int = 64,
         temperature: float = 1.0,
         top_k: int | None = 50,
+        forbidden: Sequence[int] | None = None,
     ) -> torch.Tensor:
         """Génération autorégressive naïve, sans cache clé/valeur.
 
@@ -145,12 +148,23 @@ class Thadeus(nn.Module):
         pendant le développement, pas à servir des requêtes. Une génération
         efficace (cache KV, lots) viendra quand il y aura un modèle qui vaudra
         la peine d'être servi.
+
+        Args:
+            forbidden: identifiants interdits à l'échantillonnage. Sert aux
+                jetons de service (`<|pad|>`, créneaux réservés) : ils occupent
+                des identifiants du vocabulaire, donc un modèle peu entraîné les
+                tire comme les autres, et ils polluent la sortie. Les interdire
+                est une décision d'inférence, pas d'entraînement — le modèle
+                continue de les voir en apprentissage.
         """
         self.eval()
+        interdits = torch.tensor(list(forbidden), device=input_ids.device) if forbidden else None
         for _ in range(max_new_tokens):
             window = input_ids[:, -self.cfg.max_seq_len :]
             logits, _ = self(window)
             logits = logits[:, -1, :].float()
+            if interdits is not None:
+                logits[:, interdits] = float("-inf")
 
             if temperature <= 0:
                 next_token = logits.argmax(dim=-1, keepdim=True)

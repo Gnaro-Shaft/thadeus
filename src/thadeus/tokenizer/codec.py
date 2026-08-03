@@ -108,6 +108,18 @@ class Codec:
     def decode(self, ids: list[int], *, skip_special: bool = False) -> str:
         return self.tokenizer.decode(ids, skip_special_tokens=skip_special)
 
+    @property
+    def service_ids(self) -> list[int]:
+        """Identifiants des jetons de service, à interdire en génération.
+
+        Le séparateur de documents en est **exclu** : c'est un jeton légitime
+        que le modèle doit pouvoir produire pour marquer une fin de texte.
+        Seuls le remplissage et les créneaux réservés sont interdits.
+        """
+        noms = [self.special.pad, *(f"<|reserved_{i}|>" for i in range(self.special.reserved))]
+        ids = [self.tokenizer.token_to_id(n) for n in noms]
+        return [i for i in ids if i is not None]
+
     def count(self, text: str) -> int:
         """Nombre de tokens, sans matérialiser la liste — pour mesurer un corpus."""
         return len(self.tokenizer.encode(text, add_special_tokens=False).ids)

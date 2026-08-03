@@ -1,0 +1,23 @@
+# Campagne d'évaluation de référence.
+
+label = "eval"
+seed = 1337
+device = "auto"
+
+run_label = "medium_mup"          # d'où vient le checkpoint
+model_config_path = "model/medium.toml"
+tokenizer_label = "bpe32k"
+
+corpus_label = "fr_first_v2"
+max_documents = 400
+seq_len = 1024
+
+# Les 18 romans du domaine public. Ils ne pèsent presque rien dans le corpus
+# (0,08 %) mais font le meilleur juge du français qu'on ait : littéraire,
+# cohérent, sans balisage — le contraire d'une page web.
+gutenberg_root = "~/LLM_personelle/datasets/gutenberg"
+gutenberg_documents = 200
+
+probes = true
+generate = true
+max_new_tokens = 60
