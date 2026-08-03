@@ -10,9 +10,9 @@ La chaîne est découpée en étages, et **le contrat entre deux étages est un 
 sur disque, pas un appel de fonction** :
 
 ```
-corpus → [1 data] → shards → [2 tokenizer] → tokens → [3 model] ↘
-                                                                  [5 train] → ckpt → [6 eval]
-                                                        [4 optim] ↗
+sources → [1 data] → shards → [2 tokenizer] → tokens ─┐
+                                                       ├─→ [5 train] → ckpt → [6 eval]
+                          [3 model] + [4 optim] ───────┘
 ```
 
 Deux conséquences voulues :
@@ -87,6 +87,10 @@ src/thadeus/
   bench/          étage 0 — mesure de la machine, identique Mac et H100
   data/           étage 1 — sources, nettoyage, dédup, mélange, shards
   tokenizer/      étage 2 — BPE byte-level entraîné sur notre corpus
+  model/          étage 3 — Transformer assemblé par config
+  optim/          étage 4 — Muon, muP, planificateurs
+  train/          étage 5 — boucle, checkpoints, reprise
+  eval/           étage 6 — perplexité, sondes, génération
 tests/
 artifacts/        sorties versionnées par hash de config (non versionné en git)
 ```
@@ -138,3 +142,94 @@ l'anglais**, parce que le vocabulaire est dépensé en français.
 
 Deux gains distincts, à ne pas confondre : entraîner le vocabulaire sur notre
 corpus vaut **−21 %**, le motif de pré-tokenisation française **−2 %** de plus.
+
+## Le modèle
+
+```bash
+.venv/bin/python scripts/model_info.py --config model/medium.toml
+.venv/bin/python scripts/model_info.py --config model/small.toml --benchmark
+.venv/bin/python scripts/model_info.py --config model/tiny.toml --overfit
+```
+
+Transformer moderne — RMSNorm, SwiGLU, RoPE, GQA, QK-norm — assemblé depuis la
+config. Chaque brique est enregistrée sous un nom et substituable en une ligne
+de TOML : c'est la condition matérielle des A/B d'architecture.
+
+`medium.toml` (188 M paramètres) est **dérivé du budget, pas choisi** : 15,24
+crédits ≈ 4,2 EFLOPs, et l'optimum de Chinchilla place le modèle là.
+
+Deux mesures qui décident de tout :
+
+| | |
+|---|---|
+| `torch.compile` sur MPS | **×3,00** — 27 h au lieu de 72 h pour 1,7 Md de tokens |
+| Débit effectif réel | 8,3 TFLOPS compilé · 3,1 en eager |
+
+**Ne jamais dimensionner un run sur une fraction supposée de la crête matmul.**
+Le mode compilé n'est pas une optimisation de confort, c'est la différence entre
+un budget tenu et un budget faux d'un facteur 3.
+
+## L'optimiseur
+
+```bash
+.venv/bin/python scripts/lr_sweep.py --widths 128 256 512 --optim adamw
+.venv/bin/python scripts/lr_sweep.py --widths 128 256 512 --optim adamw --mup
+```
+
+| Configuration | Optimum par largeur (128/256/512) | Transfert |
+|---|---|---|
+| AdamW standard | 1e-3 → 3e-4 → 3e-4 | ❌ dérive |
+| **AdamW + muP** | **1e-3 → 1e-3 → 1e-3** | ✅ transfère |
+
+**muP n'est pas un accélérateur, c'est une assurance.** Il ne fait pas converger
+plus vite ; il garantit que le taux d'apprentissage trouvé sur un modèle jouet
+gratuit vaut encore sur le modèle final. À budget de crédits fini, éviter un run
+gaspillé vaut plus qu'un gain de vitesse.
+
+Muon est implémenté mais **non confirmé** : il perd de 2 % sur notre banc, dont
+la tâche est cependant un mauvais proxy — elle est dominée par les couches qui
+vont à AdamW dans les deux cas. À départager sur du texte réel.
+
+## L'entraînement
+
+```bash
+.venv/bin/python scripts/tokenize_corpus.py --corpus-label thadeus_v1 --tokenizer bpe32k
+.venv/bin/python scripts/train.py --config train/medium_mup.toml
+```
+
+Relancer la même commande après une interruption **reprend exactement où l'on
+s'était arrêté, mêmes lots compris**. Deux propriétés le garantissent :
+
+- **Le chargeur est sans état** : les lots dérivent du numéro de pas, donc
+  restaurer le pas suffit. La meilleure façon de ne pas perdre un état est de
+  ne pas en avoir.
+- **L'artefact est nommé par l'identité du run**, pas par sa config complète.
+  Durée, verbosité et fréquence de sauvegarde en sont exclues — allonger un run
+  le reprend au lieu d'en créer un nouveau.
+
+Le planificateur est **WSD** et non cosinus : palier à taux constant, puis
+décroissance sur les derniers 10 %. On peut donc arrêter le palier quand on
+veut et ne payer que la décroissance — ce qui permet d'entraîner par nuits sur
+le Mac et de finir au cloud.
+
+## L'évaluation
+
+```bash
+.venv/bin/python scripts/evaluate.py --config eval/default.toml
+```
+
+Trois mesures pour trois questions distinctes :
+
+- **Perplexité par source** — le modèle prédit-il bien ce corpus ?
+- **Sondes** (26 paires minimales) — *qu'a-t-il* appris ? *« Les enfants
+  mangent »* contre *« Les enfants mange »* : laquelle juge-t-il plus probable ?
+  Le hasard donne 50 %.
+- **Génération** — attrape les pathologies qu'aucun chiffre ne montre.
+
+Les **bits par caractère** sont la seule métrique comparable entre modèles à
+tokenizers différents : un tokenizer plus efficace gonfle mécaniquement la
+perplexité par token sans que le modèle soit moins bon.
+
+Sans checkpoint, l'évaluation porte sur un modèle non entraîné et donne la ligne
+de base — perte ≈ `ln(V)`, sondes ≈ 50 %. Si ce chiffre dévie, c'est la mesure
+qu'il faut suspecter, pas le modèle.
