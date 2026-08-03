@@ -30,6 +30,7 @@ import torch  # noqa: E402
 from thadeus.bench.flops import MEASURED_EFFECTIVE_TFLOPS, mfu  # noqa: E402
 from thadeus.core.config import load_config  # noqa: E402
 from thadeus.core.device import describe, hot_path_dtype, resolve_device, synchronize  # noqa: E402
+from thadeus.core.env import load_dotenv  # noqa: E402
 from thadeus.core.logs import setup_logging  # noqa: E402
 from thadeus.core.seeding import seed_everything  # noqa: E402
 from thadeus.model import ModelConfig, Thadeus, estimate  # noqa: E402
@@ -116,6 +117,10 @@ def main() -> int:
     args = parser.parse_args()
 
     setup_logging("WARNING")
+    # HF_TOKEN et clés Lightning. Sans cet appel, les datasets sous licence
+    # échouent avec « you must be authenticated » alors que le jeton est bien
+    # dans le .env — le piège qui a fait échouer les sources de code.
+    load_dotenv()
     seed_everything(1337)
 
     cfg = ModelConfig(**load_config(args.config, overrides=args.overrides))

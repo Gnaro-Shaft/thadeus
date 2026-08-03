@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from thadeus.core.config import load_config  # noqa: E402
+from thadeus.core.env import load_dotenv  # noqa: E402
 from thadeus.core.logs import setup_logging  # noqa: E402
 from thadeus.data.pipeline import build_corpus, peek  # noqa: E402
 
@@ -43,6 +44,10 @@ def main() -> int:
     args = parser.parse_args()
 
     setup_logging(args.log_level)
+    # HF_TOKEN et clés Lightning. Sans cet appel, les datasets sous licence
+    # échouent avec « you must be authenticated » alors que le jeton est bien
+    # dans le .env — le piège qui a fait échouer les sources de code.
+    load_dotenv()
     cfg = load_config(args.config, overrides=args.overrides)
     artifact = build_corpus(cfg, force=args.force)
 

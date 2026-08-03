@@ -1,0 +1,43 @@
+# Collecte des seules sources de code.
+#
+# Le reste du corpus est déjà collecté (artefact `fr_first_v2-e0aa2864`,
+# 2,60 Md tokens). Cette config ne récupère que ce qui manque, puis
+# `assemble.toml` mélange l'ensemble depuis les shards.
+#
+# Elle existe parce que les sources de code ont échoué lors de la collecte
+# principale : `scripts/build_corpus.py` datait de la Phase 1, écrit AVANT
+# `core/env.py`, et ne chargeait donc jamais le `.env`. HF_TOKEN n'atteignait
+# pas le processus, et un dataset sous licence répondait « you must be
+# authenticated » alors que le jeton était bien présent. Corrigé pour les neuf
+# scripts d'un coup.
+
+extends = "data/fr_first.toml"
+
+label = "code_only"
+total_tokens = 800_000_000
+
+[[sources]]
+name = "huggingface"
+label = "code_python"
+weight = 0.67
+filters = "code"
+[sources.options]
+dataset = "bigcode/the-stack-dedup"
+data_dir = "data/python"
+lang = "code"
+limit = 400_000
+shuffle_buffer = 5_000
+text_field = "content"
+
+[[sources]]
+name = "huggingface"
+label = "code_web"
+weight = 0.33
+filters = "code"
+[sources.options]
+dataset = "bigcode/the-stack-dedup"
+data_dir = "data/javascript"
+lang = "code"
+limit = 200_000
+shuffle_buffer = 5_000
+text_field = "content"
