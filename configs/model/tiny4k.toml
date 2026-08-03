@@ -1,0 +1,5 @@
+# Modèle jouet aligné sur le tokenizer du corpus de fumée (vocabulaire 4096).
+# Le vocabulaire est dupliqué ici volontairement : la boucle vérifie qu'il
+# correspond au corpus tokenisé et refuse de démarrer sinon.
+extends = "model/tiny.toml"
+vocab_size = 4096

@@ -1,0 +1,29 @@
+# Run de fumée : la chaîne complète en une minute, sur le modèle jouet.
+# Vérifie que tout s'enchaîne — jamais que le modèle est bon.
+extends = "train/small.toml"
+
+label = "smoke"
+model_config_path = "model/tiny.toml"
+tokens_label = "smoke"
+compile = false             # la compilation coûte plus que le run lui-même ici
+
+batch_size = 4
+grad_accum = 2
+total_steps = 50
+
+log_every = 10
+checkpoint_every = 25
+sample_every = 0
+
+[optim]
+lr = 1e-3
+
+[optim.schedule]
+name = "wsd"
+warmup_steps = 5
+decay_fraction = 0.2
+
+[eval]
+every = 25
+batches = 2
+val_tokens = 20_000
