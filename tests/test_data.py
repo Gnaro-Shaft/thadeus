@@ -341,3 +341,70 @@ class TestObsidian:
 
     def test_lien_markdown_reduit_au_texte(self):
         assert strip_markdown("Voir [la doc](https://x.fr) ici.") == "Voir la doc ici."
+
+
+class TestGutenberg:
+    """Découpage de romans en texte brut."""
+
+    LIVRE = (
+        "The Project Gutenberg eBook of Test\n\n"
+        "*** START OF THE PROJECT GUTENBERG EBOOK TEST ***\n\n"
+        "CHAPITRE I\n\n" + "Le premier chapitre raconte une histoire. " * 40 + "\n\n"
+        "CHAPITRE II\n\n" + "Le second chapitre en raconte une autre. " * 40 + "\n\n"
+        "*** END OF THE PROJECT GUTENBERG EBOOK TEST ***\n\n"
+        "Licence à ne surtout pas apprendre au modèle."
+    )
+
+    def test_encadrement_legal_retire(self):
+        from thadeus.data.sources.gutenberg import strip_boilerplate
+
+        texte = strip_boilerplate(self.LIVRE)
+        assert "CHAPITRE I" in texte
+        # La licence est identique dans tous les livres : la garder apprendrait
+        # au modèle à la réciter, et la dédup ne l'attraperait pas.
+        assert "Licence à ne surtout pas apprendre" not in texte
+        assert "Project Gutenberg eBook of" not in texte
+
+    def test_texte_rendu_tel_quel_sans_marqueurs(self):
+        from thadeus.data.sources.gutenberg import strip_boilerplate
+
+        # Mieux vaut un peu de bruit qu'un livre perdu.
+        assert strip_boilerplate("Un texte sans marqueurs.") == "Un texte sans marqueurs."
+
+    def test_decoupage_aux_chapitres(self):
+        from thadeus.data.sources.gutenberg import split_into_chunks, strip_boilerplate
+
+        morceaux = split_into_chunks(strip_boilerplate(self.LIVRE))
+        assert len(morceaux) == 2
+        assert morceaux[0].startswith("CHAPITRE I")
+
+    def test_roman_sans_chapitres_decoupe_par_paragraphes(self):
+        from thadeus.data.sources.gutenberg import split_into_chunks
+
+        texte = "\n\n".join(["Un paragraphe de quelques mots seulement."] * 400)
+        morceaux = split_into_chunks(texte, target_words=200)
+        assert len(morceaux) > 5
+        assert all(len(m.split()) < 400 for m in morceaux)
+
+    def test_un_livre_entier_serait_rejete_sans_decoupage(self):
+        # Justification du découpage : le filtre de longueur plafonne à 100 000
+        # mots, et le modèle n'en voit que ~1024 tokens à la fois.
+        from thadeus.data.sources.gutenberg import split_into_chunks
+
+        roman = "\n\n".join(["Une phrase de roman assez longue pour compter."] * 20_000)
+        assert len(roman.split()) > 100_000
+        assert all(len(m.split()) < 3_000 for m in split_into_chunks(roman))
+
+    def test_identifiants_stables_et_lisibles(self, tmp_path):
+        from thadeus.data.sources.gutenberg import from_gutenberg
+
+        (tmp_path / "germinal.txt").write_text(self.LIVRE, encoding="utf-8")
+        docs = list(from_gutenberg(root=str(tmp_path), min_words=10))
+        assert docs and all(d.id.startswith("gutenberg:germinal#") for d in docs)
+        assert docs[0].meta["book"] == "germinal"
+
+    def test_repertoire_absent_rejete(self):
+        from thadeus.data.sources.gutenberg import from_gutenberg
+
+        with pytest.raises(FileNotFoundError):
+            list(from_gutenberg(root="/chemin/inexistant"))
