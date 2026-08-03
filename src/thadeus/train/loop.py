@@ -155,6 +155,12 @@ def build_trainer(raw_config: dict[str, Any], *, artifact: Artifact) -> Trainer:
     model = Thadeus(model_cfg).to(device)
     log.info("Modèle : %s", sizing)
 
+    # Le tokenizer qui a produit ce corpus, pour pouvoir décoder les
+    # échantillons générés pendant l'entraînement. On le retrouve depuis les
+    # métadonnées du corpus plutôt que de le redemander en config : c'est le
+    # seul tokenizer avec lequel ces tokens ont un sens.
+    codec = _load_codec(store)
+
     optimizer = OPTIMIZERS.build(
         {"name": cfg.optim.name},
         params=parameter_groups(model, weight_decay=cfg.optim.weight_decay),
@@ -187,8 +193,27 @@ def build_trainer(raw_config: dict[str, Any], *, artifact: Artifact) -> Trainer:
         checkpoints=CheckpointManager(artifact.path / "checkpoints", keep_last=cfg.keep_last),
         metrics=MetricWriter(artifact.path / "metrics.jsonl", context={"run": cfg.label}),
         raw_config=raw_config,
+        codec=codec,
         hooks=default_hooks(cfg),
     )
+
+
+def _load_codec(store: TokenStore):
+    """Recharge le tokenizer d'origine, ou ``None`` s'il est introuvable.
+
+    Ne pas trouver le tokenizer prive des échantillons de texte, pas de
+    l'entraînement : on dégrade plutôt que d'échouer.
+    """
+    name = store.meta.get("tokenizer")
+    if not name:
+        return None
+    path = ARTIFACT_ROOT / "tokenizer" / name
+    if not path.is_dir():
+        log.warning("Tokenizer %s introuvable — pas d'échantillons de texte", name)
+        return None
+    from thadeus.tokenizer.codec import Codec
+
+    return Codec.load(path)
 
 
 def train(raw_config: dict[str, Any], *, resume: bool = True) -> Artifact:
