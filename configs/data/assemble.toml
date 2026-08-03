@@ -87,18 +87,34 @@ source = "fineweb_edu"
 [[sources]]
 name = "shards"
 label = "code_python"
-weight = 0.10
+weight = 0.07
 [sources.options]
 artifact = "code_only"
 source = "code_python"
 
 [[sources]]
 name = "shards"
+label = "code_python_extra"
+weight = 0.03
+[sources.options]
+artifact = "code_extra"
+source = "code_python_extra"
+
+[[sources]]
+name = "shards"
 label = "code_web"
-weight = 0.05
+weight = 0.035
 [sources.options]
 artifact = "code_only"
 source = "code_web"
+
+[[sources]]
+name = "shards"
+label = "code_web_extra"
+weight = 0.015
+[sources.options]
+artifact = "code_extra"
+source = "code_web_extra"
 
 # --- Notes personnelles ---
 # Poids symbolique : ~1 M de tokens ne peut pas peser davantage sans être

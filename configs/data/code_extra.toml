@@ -1,0 +1,42 @@
+# Élargissement du code — même logique que `extend_fr.toml`.
+#
+# La première passe a rendu 337 M de tokens pour les 600 M que demande la cible
+# de 15 % (D4). Sans ce complément, le code tomberait à ~8 % du corpus, et la
+# composition décidée serait silencieusement abandonnée — exactement ce que le
+# planificateur de mélange est fait pour empêcher.
+#
+# Graine de mélange différente (7331 ≠ 1337) : autre tranche du dataset. Le
+# recouvrement résiduel est absorbé par la déduplication à l'assemblage.
+
+extends = "data/code_only.toml"
+
+label = "code_extra"
+total_tokens = 600_000_000
+
+[[sources]]
+name = "huggingface"
+label = "code_python_extra"
+weight = 0.67
+filters = "code"
+[sources.options]
+dataset = "bigcode/the-stack-dedup"
+data_dir = "data/python"
+lang = "code"
+limit = 600_000
+shuffle_buffer = 5_000
+seed = 7331
+text_field = "content"
+
+[[sources]]
+name = "huggingface"
+label = "code_web_extra"
+weight = 0.33
+filters = "code"
+[sources.options]
+dataset = "bigcode/the-stack-dedup"
+data_dir = "data/javascript"
+lang = "code"
+limit = 300_000
+shuffle_buffer = 5_000
+seed = 7331
+text_field = "content"
