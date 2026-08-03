@@ -16,6 +16,9 @@ __pycache__/
 /data/
 /checkpoints/
 
+# Journaux d'exécution : produits par les runs, jamais du code source.
+*.log
+
 # Les artefacts sont exclus... sauf les mesures de banc : elles sont minuscules,
 # et tout l'intérêt de l'étage 0 est de comparer Mac et H100 dans le temps.
 # Il faut ré-autoriser les *répertoires* intermédiaires : git ne descend jamais
