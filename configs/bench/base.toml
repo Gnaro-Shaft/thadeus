@@ -1,0 +1,35 @@
+# Campagne de mesure de référence.
+# Rejouable telle quelle sur le Mac (MPS) et sur le H100 (CUDA) : c'est la
+# comparaison entre les deux qui dimensionne le run final.
+
+label = "kernels"
+device = "auto"
+seed = 1337
+
+# Appliqués à tous les benchmarks, sauf surcharge locale.
+[defaults]
+warmup = 3
+iters = 10
+
+# Le débit matmul est le plafond de tout le reste : un Transformer y passe
+# l'essentiel de son temps.
+[[benchmarks]]
+name = "matmul"
+sizes = [2048, 4096, 8192]
+dtypes = ["bfloat16", "float16", "float32"]
+
+# Complément indispensable : normalisations, activations et pas d'optimiseur
+# ne calculent presque rien et sont bornés par la mémoire.
+[[benchmarks]]
+name = "bandwidth"
+megabytes = 256
+dtypes = ["bfloat16", "float32"]
+
+# Coût en s² — c'est lui qui décide de la longueur de contexte abordable,
+# et c'est la référence contre laquelle on jugera MLA et GQA.
+[[benchmarks]]
+name = "attention"
+batch = 8
+heads = 12
+head_dim = 64
+seq_lens = [1024, 2048, 4096]

@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.env
+.env.*
+
+# Sorties de la chaîne — reproductibles à partir des configs, jamais versionnées
+artifacts/
+data/
+checkpoints/
+
+# Sauf les métadonnées de benchmark : petites, et on veut comparer Mac vs H100 dans le temps
+!artifacts/bench/**/meta.json
+!artifacts/bench/**/results.json
+
+.DS_Store

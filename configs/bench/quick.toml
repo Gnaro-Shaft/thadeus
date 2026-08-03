@@ -1,0 +1,27 @@
+# Version courte, pour vérifier que la chaîne tourne (quelques secondes).
+# Démontre l'héritage : on ne redéfinit que ce qui change.
+
+extends = "bench/base.toml"
+
+label = "quick"
+
+[defaults]
+warmup = 1
+iters = 3
+
+[[benchmarks]]
+name = "matmul"
+sizes = [2048]
+dtypes = ["bfloat16", "float32"]
+
+[[benchmarks]]
+name = "bandwidth"
+megabytes = 64
+dtypes = ["bfloat16"]
+
+[[benchmarks]]
+name = "attention"
+batch = 2
+heads = 8
+head_dim = 64
+seq_lens = [512]
