@@ -1,28 +1,32 @@
-"""Initialisation des poids.
+"""Initialisation des poids et classement des paramètres.
 
-Deux règles, et la seconde est celle qu'on oublie.
+Deux règles d'initialisation, et la seconde est celle qu'on oublie.
 
-1. **Loi normale d'écart-type modeste** (0,02) sur les projections. Rien
-   d'original, c'est la recette GPT-2.
+1. **Loi normale d'écart-type modeste** (0,02) sur les projections. Recette GPT-2.
 
 2. **Les projections de sortie des sous-blocs sont divisées par √(2·n_layers).**
    Le chemin résiduel additionne la contribution de chaque sous-bloc ; sans cette
    mise à l'échelle, la variance de l'activation croît linéairement avec la
-   profondeur, et un modèle profond démarre avec des activations qui saturent
-   déjà. Le facteur 2 vient des deux sous-blocs par couche (attention et
-   feed-forward).
+   profondeur, et un modèle profond démarre avec des activations qui saturent.
+   Le facteur 2 vient des deux sous-blocs par couche.
 
-Ce module prépare aussi la **Phase 5 (muP)**. La paramétrisation à transfert
-d'hyperparamètres consiste précisément à faire dépendre l'initialisation et le
-taux d'apprentissage de la largeur du modèle, selon des règles différentes par
-type de matrice. :func:`parameter_groups` expose déjà cette classification :
-muP consistera à attacher des multiplicateurs à ces groupes, sans rien
-restructurer.
+**Le classement des paramètres** (:func:`parameter_groups`) est ce sur quoi
+reposent Muon et muP. Trois familles, et la distinction n'est pas cosmétique :
+
+- ``hidden`` — matrices 2D des couches cachées. Lignes et colonnes y jouent des
+  rôles symétriques, ce qui est exactement la condition sous laquelle
+  l'orthogonalisation de Muon a un sens.
+- ``embedding`` — tables d'entrée et de sortie. Ce sont des **vecteurs indexés**,
+  pas des transformations linéaires : les orthogonaliser n'aurait aucun sens, et
+  muP leur applique des règles de mise à l'échelle distinctes.
+- ``vector`` — gains de normalisation et biais. Jamais de décroissance de poids :
+  les pousser vers zéro revient à désactiver progressivement les normalisations,
+  bug silencieux qui se manifeste comme une convergence médiocre.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import nn
@@ -30,7 +34,7 @@ from torch import nn
 if TYPE_CHECKING:
     from thadeus.model.config import ModelConfig
 
-__all__ = ["initialize", "parameter_groups"]
+__all__ = ["classify_parameters", "initialize", "parameter_groups"]
 
 # Projections qui écrivent dans le flux résiduel — celles qu'il faut atténuer.
 _RESIDUAL_OUTPUTS = ("o_proj", "down_proj")
@@ -56,25 +60,82 @@ def initialize(model: nn.Module, cfg: ModelConfig) -> None:
                     module.weight.mul_(scale)
 
 
-def parameter_groups(model: nn.Module, *, weight_decay: float = 0.1) -> list[dict]:
-    """Classe les paramètres pour l'optimiseur.
+def classify_parameters(model: nn.Module) -> dict[str, list[nn.Parameter]]:
+    """Range les paramètres en ``hidden`` / ``embedding`` / ``vector``.
 
-    Deux groupes, sur un critère de dimension plutôt que de nom : **on ne
-    régularise que les matrices**. Appliquer une décroissance de poids aux gains
-    de normalisation et aux biais les pousse vers zéro, ce qui revient à
-    désactiver progressivement les normalisations — un bug silencieux qui se
-    manifeste comme une convergence médiocre, jamais comme une erreur.
+    Le classement se fait par **rôle**, déduit du module propriétaire, et non par
+    dimension seule : une table d'embedding et une matrice de couche cachée sont
+    toutes deux 2D, mais Muon ne doit voir que la seconde.
 
-    La classification par dimension prépare aussi muP (Phase 5), qui distingue
-    matrices et vecteurs pour leurs règles de mise à l'échelle.
+    Les poids partagés entre entrée et sortie ne sont comptés qu'une fois — les
+    lister deux fois ferait appliquer deux mises à jour par pas, soit un taux
+    d'apprentissage effectif doublé sur la table, en silence.
     """
-    matrices, vectors = [], []
-    for param in model.parameters():
-        if not param.requires_grad:
-            continue
-        (matrices if param.dim() >= 2 else vectors).append(param)
+    groups: dict[str, list[nn.Parameter]] = {"hidden": [], "embedding": [], "vector": []}
+    seen: set[int] = set()
 
-    return [
-        {"params": matrices, "weight_decay": weight_decay, "kind": "matrix"},
-        {"params": vectors, "weight_decay": 0.0, "kind": "vector"},
-    ]
+    for module in model.modules():
+        kind = "embedding" if isinstance(module, nn.Embedding) else None
+        for param in module.parameters(recurse=False):
+            if not param.requires_grad or id(param) in seen:
+                continue
+            seen.add(id(param))
+            if param.ndim < 2:
+                groups["vector"].append(param)
+            elif kind == "embedding":
+                groups["embedding"].append(param)
+            else:
+                groups["hidden"].append(param)
+
+    return groups
+
+
+def parameter_groups(
+    model: nn.Module,
+    *,
+    weight_decay: float = 0.1,
+    lr_scales: dict[str, float] | None = None,
+) -> list[dict[str, Any]]:
+    """Construit les groupes passés à l'optimiseur.
+
+    Args:
+        weight_decay: appliquée aux matrices et embeddings, **jamais** aux
+            vecteurs.
+        lr_scales: multiplicateurs de taux d'apprentissage par famille. C'est
+            par là que muP transfère les hyperparamètres entre largeurs (voir
+            :mod:`thadeus.optim.mup`) ; sans muP, tout vaut 1.
+
+    Returns:
+        Un groupe par famille non vide, portant sa clé ``kind`` — les
+        constructeurs d'optimiseur s'en servent pour router les matrices cachées
+        vers Muon et le reste vers AdamW.
+    """
+    scales = lr_scales or {}
+    classified = classify_parameters(model)
+
+    groups: list[dict[str, Any]] = []
+    for kind, params in classified.items():
+        if not params:
+            continue
+        groups.append(
+            {
+                "params": params,
+                "kind": kind,
+                "weight_decay": 0.0 if kind == "vector" else weight_decay,
+                "lr_scale": scales.get(kind, 1.0),
+            }
+        )
+    return groups
+
+
+def lm_head_of(model: nn.Module) -> nn.Linear | None:
+    """Retrouve la projection de sortie, si elle n'est pas partagée avec l'entrée.
+
+    Quand les embeddings sont partagés, la sortie **est** la table d'entrée :
+    elle est déjà classée en ``embedding`` et ne doit pas être traitée deux fois.
+    """
+    head = getattr(model, "lm_head", None)
+    embedding = getattr(model, "embedding", None)
+    if head is None or embedding is None:
+        return head
+    return None if head.weight is embedding.weight else head

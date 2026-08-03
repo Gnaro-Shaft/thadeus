@@ -1,0 +1,17 @@
+# Variante Muon du run final — à départager contre `medium_mup.toml` sur du
+# texte réel, pas sur la tâche jouet du balayage.
+#
+# Le balayage du 2026-08-03 donne Muon perdant (1,794 contre 1,757), mais sa
+# tâche — une chaîne de Markov d'ordre 1 — est dominée par les couches
+# d'embedding et de sortie, qui vont à AdamW dans les DEUX cas. Les matrices
+# cachées, seul terrain de Muon, y jouent un rôle marginal. Le test ne peut donc
+# pas trancher, et l'annoncer comme tranché serait une faute.
+
+extends = "train/medium_mup.toml"
+
+label = "medium_muon"
+
+[optim]
+name = "muon"
+lr = 1e-3                # AdamW : embeddings et vecteurs
+muon_lr = 0.01           # Muon : matrices cachées (optimum du balayage)

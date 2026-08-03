@@ -115,6 +115,8 @@ class Thadeus(nn.Module):
             x = block(x, cos, sin)
         x = self.final_norm(x)
         logits = self.lm_head(x)
+        if self.cfg.logit_scale != 1.0:
+            logits = logits * self.cfg.logit_scale
 
         loss = None
         if targets is not None:

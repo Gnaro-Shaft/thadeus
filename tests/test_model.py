@@ -229,19 +229,47 @@ class TestInitialisation:
         sans = Thadeus(ModelConfig(**{**TINY, "n_layers": 8, "scale_residual_init": False}))
         assert avec.blocks[0].attn.o_proj.weight.std() < sans.blocks[0].attn.o_proj.weight.std()
 
-    def test_groupes_separent_matrices_et_vecteurs(self, tiny_model):
+    def test_trois_familles_de_parametres(self, tiny_model):
+        # Le classement par rôle est ce sur quoi reposent Muon et muP :
+        # une table d'embedding et une matrice cachée sont toutes deux 2D,
+        # mais Muon ne doit voir que la seconde.
+        from thadeus.model.init import classify_parameters
+
+        groups = classify_parameters(tiny_model)
+        assert set(groups) == {"hidden", "embedding", "vector"}
+        assert all(p.dim() == 2 for p in groups["hidden"])
+        assert all(p.dim() == 2 for p in groups["embedding"])
+        assert all(p.dim() < 2 for p in groups["vector"])
+        assert tiny_model.embedding.weight in groups["embedding"]
+        assert tiny_model.blocks[0].attn.q_proj.weight in groups["hidden"]
+
+    def test_poids_partages_comptes_une_seule_fois(self, tiny_model):
+        # Les lister deux fois appliquerait deux mises à jour par pas, soit un
+        # taux d'apprentissage doublé sur la table — en silence.
+        from thadeus.model.init import classify_parameters
+
+        groups = classify_parameters(tiny_model)
+        total = sum(len(v) for v in groups.values())
+        assert total == len(list(tiny_model.parameters()))
+
+    def test_vecteurs_jamais_regularises(self, tiny_model):
         # Régulariser les gains de normalisation revient à les désactiver
         # progressivement — bug silencieux, jamais une erreur.
-        groups = parameter_groups(tiny_model, weight_decay=0.1)
-        assert groups[0]["weight_decay"] == 0.1
-        assert groups[1]["weight_decay"] == 0.0
-        assert all(p.dim() >= 2 for p in groups[0]["params"])
-        assert all(p.dim() < 2 for p in groups[1]["params"])
+        groups = {g["kind"]: g for g in parameter_groups(tiny_model, weight_decay=0.1)}
+        assert groups["vector"]["weight_decay"] == 0.0
+        assert groups["hidden"]["weight_decay"] == 0.1
+        assert groups["embedding"]["weight_decay"] == 0.1
 
     def test_tous_les_parametres_classes(self, tiny_model):
         groups = parameter_groups(tiny_model)
         classes = sum(len(g["params"]) for g in groups)
         assert classes == len(list(tiny_model.parameters()))
+
+    def test_multiplicateurs_de_taux_transmis(self, tiny_model):
+        # Le canal par lequel muP transfère les hyperparamètres entre largeurs.
+        groups = {g["kind"]: g for g in parameter_groups(tiny_model, lr_scales={"hidden": 0.25})}
+        assert groups["hidden"]["lr_scale"] == 0.25
+        assert groups["embedding"]["lr_scale"] == 1.0
 
 
 class TestDimensionnement:

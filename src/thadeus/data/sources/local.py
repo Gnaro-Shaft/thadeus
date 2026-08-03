@@ -76,6 +76,8 @@ def from_shards(
     multi-sources sans écraser sa composition.
     """
     for doc in iter_documents(path, limit=limit):
-        yield doc if label is None else Document(
-            id=doc.id, text=doc.text, source=label, lang=doc.lang, meta=doc.meta
+        yield (
+            doc
+            if label is None
+            else Document(id=doc.id, text=doc.text, source=label, lang=doc.lang, meta=doc.meta)
         )

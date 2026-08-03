@@ -180,8 +180,10 @@ def make_language_is(*, lang: str = "fr", min_score: float = 0.05, margin: float
         others = [v for k, v in scores.items() if k != lang]
         if others and target < margin * max(others):
             return None
-        return doc if doc.lang == lang else Document(
-            id=doc.id, text=doc.text, source=doc.source, lang=lang, meta=doc.meta
+        return (
+            doc
+            if doc.lang == lang
+            else Document(id=doc.id, text=doc.text, source=doc.source, lang=lang, meta=doc.meta)
         )
 
     return step

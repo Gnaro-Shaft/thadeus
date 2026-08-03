@@ -151,9 +151,7 @@ def plan_mixture(
     def repeats_for(source: str) -> float:
         return max_repeats if isinstance(max_repeats, int | float) else max_repeats.get(source, 1.0)
 
-    capacity = {
-        src: int(available.get(src, 0) * repeats_for(src)) for src in normalized
-    }
+    capacity = {src: int(available.get(src, 0) * repeats_for(src)) for src in normalized}
 
     take: dict[str, int] = {}
     warnings: list[str] = []

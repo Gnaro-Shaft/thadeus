@@ -31,28 +31,20 @@ from thadeus.core.artifacts import ARTIFACT_ROOT, Artifact, open_artifact
 from thadeus.core.config import load_config
 from thadeus.core.device import describe, hot_path_dtype, resolve_device
 from thadeus.core.logs import MetricWriter, get_logger
-from thadeus.core.registry import Registry
 from thadeus.core.seeding import derive_seed, seed_everything
 from thadeus.data.schema import format_tokens
 from thadeus.model import ModelConfig, Thadeus, estimate
-from thadeus.model.init import parameter_groups
+from thadeus.optim.build import build_optimizer
+from thadeus.optim.mup import MupConfig, apply_mup, logit_scale, lr_scales
 from thadeus.optim.schedules import SCHEDULES
 from thadeus.train.checkpoint import CheckpointManager
 from thadeus.train.config import TrainConfig
 from thadeus.train.hooks import CheckpointHook, Hook, default_hooks
 from thadeus.train.tokens import TokenStore
 
-__all__ = ["OPTIMIZERS", "TrainState", "Trainer", "find_tokens", "train"]
+__all__ = ["TrainState", "Trainer", "find_tokens", "train"]
 
 log = get_logger(__name__)
-
-OPTIMIZERS: Registry = Registry("optimizer")
-
-
-@OPTIMIZERS.register("adamw")
-def build_adamw(params, *, lr: float, weight_decay: float, betas, eps: float, **_: Any):
-    """AdamW — la référence. Muon viendra le concurrencer en Phase 5."""
-    return torch.optim.AdamW(params, lr=lr, betas=tuple(betas), eps=eps)
 
 
 @dataclass
@@ -100,6 +92,7 @@ class Trainer:
     checkpoints: CheckpointManager
     metrics: MetricWriter
     raw_config: dict[str, Any]
+    mup_factors: dict[str, float] = field(default_factory=dict)
     codec: Any = None
     hooks: list[Hook] = field(default_factory=list)
 
@@ -151,8 +144,15 @@ def build_trainer(raw_config: dict[str, Any], *, artifact: Artifact) -> Trainer:
             f"hors bornes, ou des tokens que le modèle n'atteindra jamais."
         )
 
+    # muP réajuste l'initialisation et fournit les multiplicateurs de taux.
+    # `logit_scale` doit être fixé AVANT de construire le modèle : il fait
+    # partie de son architecture, pas de sa conduite.
+    mup = MupConfig(**raw_config.get("mup", {}))
+    model_cfg = model_cfg.model_copy(update={"logit_scale": logit_scale(model_cfg, mup)})
+
     sizing = estimate(model_cfg)
     model = Thadeus(model_cfg).to(device)
+    mup_factors = apply_mup(model, model_cfg, mup)
     log.info("Modèle : %s", sizing)
 
     # Le tokenizer qui a produit ce corpus, pour pouvoir décoder les
@@ -161,14 +161,7 @@ def build_trainer(raw_config: dict[str, Any], *, artifact: Artifact) -> Trainer:
     # seul tokenizer avec lequel ces tokens ont un sens.
     codec = _load_codec(store)
 
-    optimizer = OPTIMIZERS.build(
-        {"name": cfg.optim.name},
-        params=parameter_groups(model, weight_decay=cfg.optim.weight_decay),
-        lr=cfg.optim.lr,
-        weight_decay=cfg.optim.weight_decay,
-        betas=cfg.optim.betas,
-        eps=cfg.optim.eps,
-    )
+    optimizer = build_optimizer(model, spec=cfg.optim, lr_scales=lr_scales(model_cfg, mup))
     schedule_spec = (
         cfg.optim.schedule if isinstance(cfg.optim.schedule, dict) else {"name": cfg.optim.schedule}
     )
@@ -193,6 +186,7 @@ def build_trainer(raw_config: dict[str, Any], *, artifact: Artifact) -> Trainer:
         checkpoints=CheckpointManager(artifact.path / "checkpoints", keep_last=cfg.keep_last),
         metrics=MetricWriter(artifact.path / "metrics.jsonl", context={"run": cfg.label}),
         raw_config=raw_config,
+        mup_factors=mup_factors,
         codec=codec,
         hooks=default_hooks(cfg),
     )
@@ -255,9 +249,14 @@ def train(raw_config: dict[str, Any], *, resume: bool = True) -> Artifact:
     last_time = started
 
     for step in range(start_step + 1, cfg.total_steps + 1):
-        lr = cfg.optim.lr * trainer.schedule(step - 1)
+        # Le planificateur agit **multiplicativement** sur le taux de base de
+        # chaque groupe. Muon et AdamW ont des taux propres (facteur ~50) et des
+        # multiplicateurs muP distincts : un taux commun sous-réglerait l'un ou
+        # ferait diverger l'autre.
+        factor = trainer.schedule(step - 1)
         for group in trainer.optimizer.param_groups:
-            group["lr"] = lr
+            group["lr"] = group["base_lr"] * factor
+        lr = trainer.optimizer.param_groups[0]["lr"]
 
         total_loss = 0.0
         for index in range(cfg.grad_accum):
@@ -295,6 +294,7 @@ def train(raw_config: dict[str, Any], *, resume: bool = True) -> Artifact:
     trainer.metrics.close()
     artifact.write_meta(
         raw_config,
+        mup=trainer.mup_factors,
         final_step=state.step,
         final_loss=state.loss,
         final_val_loss=state.val_loss,

@@ -1,0 +1,42 @@
+# Run final visé — modèle de 188 M, Muon + muP.
+#
+# Les hyperparamètres de ce fichier ne sont PAS réglés sur ce modèle : ils sont
+# réglés sur des modèles jouets (scripts/lr_sweep.py) et transférés par muP.
+# C'est ce qui rend possible un run unique sur 15,24 crédits — chercher le taux
+# d'apprentissage sur un modèle de 188 M coûterait tout le budget.
+#
+# `base_d_model = 128` : la largeur des modèles jouets du balayage. Transférer
+# depuis une autre largeur que celle où l'on a réglé serait une erreur.
+
+extends = "train/small.toml"
+
+label = "medium_mup"
+model_config_path = "model/medium.toml"
+
+batch_size = 8
+grad_accum = 12          # lot effectif ≈ 98 k tokens par mise à jour
+total_steps = 38_000     # ≈ 3,76 Md tokens, l'optimum de Chinchilla (D7)
+
+# AdamW et non Muon : le balayage du 2026-08-03 n'a PAS confirmé l'avantage de
+# Muon (1,794 contre 1,757 pour AdamW à largeur 512), et son optimum transfère
+# moins bien entre largeurs. La tâche jouet du balayage est cependant un mauvais
+# proxy — voir D8. À rejuger sur du texte réel avant d'engager le run final.
+[optim]
+name = "adamw"
+lr = 1e-3                # optimum mesuré par balayage, transféré par muP
+weight_decay = 0.1
+grad_clip = 1.0
+
+[optim.schedule]
+name = "wsd"
+warmup_steps = 500
+decay_fraction = 0.1
+
+[mup]
+enabled = true
+base_d_model = 128       # largeur des modèles jouets où les taux ont été réglés
+
+[eval]
+every = 500
+batches = 20
+val_tokens = 10_000_000

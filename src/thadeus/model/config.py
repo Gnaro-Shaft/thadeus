@@ -48,6 +48,10 @@ class ModelConfig(Schema):
 
     init_std: float = 0.02
     scale_residual_init: bool = True
+    # Facteur appliqué aux logits. Vaut 1 en paramétrisation standard ; muP le
+    # fixe à 1/m pour que l'échelle des logits — donc la perte initiale — ne
+    # dépende pas de la largeur du modèle. Voir `thadeus.optim.mup`.
+    logit_scale: float = 1.0
 
     @model_validator(mode="after")
     def _check_coherence(self) -> ModelConfig:

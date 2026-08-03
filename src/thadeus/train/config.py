@@ -21,6 +21,12 @@ class OptimSpec(Schema):
 
     name: str = "adamw"
     lr: float = 3e-4
+    # Muon tolère des taux ~50x plus élevés qu'AdamW : l'orthogonalisation borne
+    # la norme du pas, ce qu'Adam ne fait pas. Un taux commun sous-réglerait l'un
+    # ou ferait diverger l'autre.
+    muon_lr: float = 0.02
+    muon_momentum: float = 0.95
+    muon_ns_steps: int = 5
     weight_decay: float = 0.1
     betas: tuple[float, float] = (0.9, 0.95)
     eps: float = 1e-8
@@ -65,6 +71,7 @@ class TrainConfig(Schema):
 
     optim: OptimSpec = Field(default_factory=OptimSpec)
     eval: EvalSpec = Field(default_factory=EvalSpec)
+    mup: dict[str, Any] = Field(default_factory=dict)
 
     log_every: int = 20
     checkpoint_every: int = 1_000
@@ -118,10 +125,13 @@ class TrainConfig(Schema):
                 "betas": list(self.optim.betas),
                 "eps": self.optim.eps,
                 "grad_clip": self.optim.grad_clip,
+                "muon_lr": self.optim.muon_lr,
                 # Le nom du planificateur fait partie de l'identité, pas ses
                 # paramètres de durée : passer de WSD à cosinus est une autre
                 # expérience, allonger le palier ne l'est pas.
                 "schedule": schedule.get("name", "wsd"),
             },
             "val_tokens": self.eval.val_tokens,
+            # muP change l'initialisation et les taux : c'est une autre expérience.
+            "mup": self.mup,
         }
