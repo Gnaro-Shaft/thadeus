@@ -1,0 +1,16 @@
+# Tokenizer de référence du projet.
+#
+# 32 000 est un arbitrage, pas un réglage par défaut : le vocabulaire réduit le
+# nombre de tokens par texte (moins de calcul) mais grossit la table d'embedding
+# (des paramètres consacrés à autre chose qu'au raisonnement). À d_model = 512,
+# 32 k occupe déjà ~19 % d'un modèle de 85 M.
+# Les variantes bpe16k / bpe48k servent à mesurer cet arbitrage avant de trancher.
+
+label = "bpe32k"
+vocab_size = 32_000
+pattern = "french"       # voir tokenizer/pretokenize.py — élisions + nombres à 3 chiffres
+min_frequency = 2
+reserved_slots = 16      # créneaux libres pour la Phase 8, évite un redimensionnement
+corpus_label = "fr_first"
+max_documents = 400_000
+seed = 1337

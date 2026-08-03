@@ -1,0 +1,5 @@
+# Témoin : identique à bpe32k, mais avec le motif de pré-tokenisation de GPT-2.
+# Seule différence avec bpe32k, donc l'écart mesuré est imputable au motif seul.
+extends = "tokenizer/bpe32k.toml"
+label = "bpe32k_gpt2pattern"
+pattern = "gpt2"

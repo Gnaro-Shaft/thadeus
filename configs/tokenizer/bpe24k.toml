@@ -1,0 +1,4 @@
+# Variante de taille de vocabulaire, pour mesurer l'arbitrage fertilité / paramètres.
+extends = "tokenizer/bpe32k.toml"
+label = "bpe24k"
+vocab_size = 24000
