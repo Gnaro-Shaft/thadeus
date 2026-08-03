@@ -1,0 +1,30 @@
+# Modèle cible du run final — 187,9 M paramètres.
+#
+# Dimensionné par le budget, pas par un chiffre rond : 15,24 crédits Lightning AI
+# donnent ~4,2 EFLOPs, dont l'optimum de Chinchilla (D = 20·N) situe le modèle à
+# ~190 M paramètres pour 3,76 Md de tokens.
+#
+# d_model = 1024 fait tomber la part de l'embedding à 17 % (contre 25 % à 640) :
+# à vocabulaire fixe, élargir le modèle dilue le coût de la table.
+
+vocab_size = 32_000
+d_model = 1024
+n_layers = 14
+max_seq_len = 1024
+rope_base = 10_000.0
+tie_embeddings = true
+
+norm = "rmsnorm"
+init_std = 0.02
+scale_residual_init = true
+
+[attention]
+name = "gqa"
+n_heads = 16
+n_kv_heads = 4
+head_dim = 64
+qk_norm = true
+bias = false
+
+[ffn]
+name = "swiglu"
