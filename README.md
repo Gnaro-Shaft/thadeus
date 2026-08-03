@@ -85,6 +85,24 @@ scripts/          1 script = 1 étage, exécutable seul
 src/thadeus/
   core/           config, registry, device, seeding, artifacts, logs
   bench/          étage 0 — mesure de la machine, identique Mac et H100
+  data/           étage 1 — sources, nettoyage, dédup, mélange, shards
 tests/
 artifacts/        sorties versionnées par hash de config (non versionné en git)
 ```
+
+## Le corpus
+
+```bash
+.venv/bin/python scripts/build_corpus.py --config data/smoke.toml    # ~1 min, vérifie la chaîne
+.venv/bin/python scripts/build_corpus.py --config data/fr_first.toml # plusieurs heures
+```
+
+Composition visée : **55 % français · 25 % technique anglais · 15 % code · 5 % notes**.
+À ~85 M paramètres, viser le français *et* le code à la fois est le meilleur moyen
+de n'avoir ni l'un ni l'autre ; le code se rattrape en fine-tuning sur une base
+linguistique solide, l'inverse ne marche pas.
+
+Après chaque exécution, lire `report.json` dans l'artefact : composition demandée
+contre composition obtenue, et taux de rejet **par filtre et par source**. La
+ventilation est le seul niveau interprétable — sur le run de fumée, Wikipédia FR
+perd 26,7 % quand FineWeb-Edu perd 0,2 %, et c'est cet écart qui informe.
