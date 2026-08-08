@@ -1,0 +1,44 @@
+# Réglage par instructions — le goulot du projet.
+#
+# Le modèle de base écrit du français mais ne **répond** pas : il continue du
+# texte. Tout le reste en dépend — la génération du RAG, la vocation
+# d'assistant, la possibilité de lui demander quoi que ce soit.
+#
+# On part du modèle de BASE, pas du fine-tuning Vault. Empiler deux
+# spécialisations rendrait impossible d'attribuer ce qui vient de laquelle ;
+# ici on veut mesurer ce que le réglage par instructions apporte, seul. Le
+# style du Vault pourra être réappliqué ensuite, ou mêlé au corpus SFT.
+#
+# Deux passages sur le corpus : un seul sous-apprend le format, au-delà de
+# trois le modèle se met à réciter les réponses vues.
+
+extends = "train/medium_mup.toml"
+
+label = "sft"
+init_from = "artifacts/train/medium_mup-edd1c090/checkpoints/best.pt"
+tokens_label = "sft"
+
+batch_size = 8
+grad_accum = 4            # lot effectif ≈ 33 k tokens
+total_steps = 650         # ≈ deux passages sur 10,76 M tokens
+
+log_every = 25
+checkpoint_every = 100
+sample_every = 150
+sample_prompt = "### Instruction\nExplique en deux phrases ce qu'est un tokenizer.\n\n### Réponse\n"
+
+[optim]
+name = "adamw"
+lr = 1e-4
+weight_decay = 0.1
+grad_clip = 1.0
+
+[optim.schedule]
+name = "wsd"
+warmup_steps = 30
+decay_fraction = 0.35
+
+[eval]
+every = 100
+batches = 10
+val_tokens = 400_000

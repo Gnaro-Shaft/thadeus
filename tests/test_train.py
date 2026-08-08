@@ -79,21 +79,27 @@ class TestFormatDeTokens:
 class TestChargeur:
     def test_formes(self, corpus):
         store = TokenStore(corpus)
-        windows = store.windows(batch_size=4, seq_len=32, seed=1)
+        windows, masks = store.windows(batch_size=4, seq_len=32, seed=1)
         assert windows.shape == (4, 33)  # seq_len + 1 : entrée et cible décalée
+        assert masks.shape == windows.shape
+
+    def test_masque_tout_a_un_sans_masque_explicite(self, corpus):
+        # Un corpus de pré-entraînement n'a pas de masque : tout compte.
+        _, masks = TokenStore(corpus).windows(batch_size=2, seq_len=16, seed=1)
+        assert masks.all()
 
     def test_sans_etat_donc_reprise_exacte(self, corpus):
         # La propriété qui permet de ne rien sauvegarder du chargeur : deux
         # appels avec la même graine donnent exactement les mêmes fenêtres.
         store = TokenStore(corpus)
-        a = store.windows(batch_size=4, seq_len=32, seed=42)
-        b = store.windows(batch_size=4, seq_len=32, seed=42)
+        a, _ = store.windows(batch_size=4, seq_len=32, seed=42)
+        b, _ = store.windows(batch_size=4, seq_len=32, seed=42)
         assert np.array_equal(a, b)
 
     def test_graines_differentes_lots_differents(self, corpus):
         store = TokenStore(corpus)
-        a = store.windows(batch_size=4, seq_len=32, seed=1)
-        b = store.windows(batch_size=4, seq_len=32, seed=2)
+        a, _ = store.windows(batch_size=4, seq_len=32, seed=1)
+        b, _ = store.windows(batch_size=4, seq_len=32, seed=2)
         assert not np.array_equal(a, b)
 
     def test_validation_disjointe_de_l_entrainement(self, corpus):
@@ -107,8 +113,8 @@ class TestChargeur:
         # Deux évaluations doivent porter sur les mêmes fenêtres, sinon leur
         # différence mélange progrès du modèle et variance d'échantillonnage.
         store = TokenStore(corpus, val_tokens=10_000)
-        a = list(store.sequential_windows(batch_size=2, seq_len=16, limit=3))
-        b = list(store.sequential_windows(batch_size=2, seq_len=16, limit=3))
+        a = [w for w, _ in store.sequential_windows(batch_size=2, seq_len=16, limit=3)]
+        b = [w for w, _ in store.sequential_windows(batch_size=2, seq_len=16, limit=3)]
         assert all(np.array_equal(x, y) for x, y in zip(a, b, strict=True))
 
     def test_split_trop_court_rejete(self, corpus):
@@ -119,6 +125,48 @@ class TestChargeur:
     def test_split_inconnu_rejete(self, corpus):
         with pytest.raises(ValueError, match="split inconnu"):
             TokenStore(corpus)._split_bounds("test")
+
+
+class TestMasqueDePerte:
+    """Le masque décide de ce que le modèle apprend à produire."""
+
+    def test_masque_ecrit_et_relu(self, tmp_path):
+        with TokenShardWriter(tmp_path / "m", vocab_size=VOCAB) as w:
+            w.write([1, 2, 3, 4, 5, 6], mask=[0, 0, 0, 1, 1, 1])
+        store = TokenStore(tmp_path / "m")
+        assert store.has_mask
+        assert store._read_mask(0, 6).tolist() == [0, 0, 0, 1, 1, 1]
+
+    def test_longueur_incoherente_rejetee(self, tmp_path):
+        # Un décalage entre tokens et masque rendrait la perte fausse sans
+        # jamais lever d'erreur : mieux vaut refuser à l'écriture.
+        with (
+            pytest.raises(ValueError, match="masque"),
+            TokenShardWriter(tmp_path / "m", vocab_size=VOCAB) as w,
+        ):
+            w.write([1, 2, 3], mask=[1, 1])
+
+    def test_compte_les_tokens_supervises(self, tmp_path):
+        with TokenShardWriter(tmp_path / "m", vocab_size=VOCAB) as w:
+            w.write([1, 2, 3, 4], mask=[0, 0, 1, 1])
+            w.write([5, 6], mask=[1, 1])
+        assert w.n_tokens == 6
+        assert w.n_masked_tokens == 4
+
+    def test_devient_moins_cent_dans_les_cibles(self, tmp_path):
+        # -100 est la valeur qu'ignore l'entropie croisée. L'alignement compte :
+        # le masque suit les CIBLES, décalées d'un cran, pas les entrées.
+        import numpy as np
+
+        from thadeus.train.loop import Trainer
+
+        windows = np.array([[10, 11, 12, 13]])
+        masks = np.array([[0, 0, 1, 1]], dtype=np.uint8)
+        entrees, cibles = Trainer.to_device(
+            type("T", (), {"device": torch.device("cpu")})(), windows, masks
+        )
+        assert entrees.tolist() == [[10, 11, 12]]
+        assert cibles.tolist() == [[-100, 12, 13]]
 
 
 class TestPlanificateurs:
@@ -316,3 +364,32 @@ class TestInitialisationDepuisCheckpoint:
         base = TrainConfig(**load_config("train/medium_mup.toml"))
         assert cfg.mup == base.mup
         assert cfg.optim.lr < base.optim.lr, "un fine-tuning s'entraîne plus doucement"
+
+
+class TestFormesDuChargeur:
+    """Régression : le chargeur doit rendre (fenêtres, masques) PARTOUT.
+
+    Une modification appliquée à `windows` mais pas à `sequential_windows` a fait
+    planter un entraînement au pas 100 — pendant l'évaluation, donc bien après le
+    démarrage, quand on croyait le run lancé.
+    """
+
+    def test_windows_rend_un_couple(self, corpus):
+        r = TokenStore(corpus).windows(batch_size=2, seq_len=16, seed=1)
+        assert isinstance(r, tuple) and len(r) == 2
+
+    def test_sequential_windows_rend_des_couples(self, corpus):
+        store = TokenStore(corpus, val_tokens=10_000)
+        for item in store.sequential_windows(batch_size=2, seq_len=16, limit=2):
+            assert isinstance(item, tuple) and len(item) == 2
+            fenetres, masques = item
+            assert fenetres.shape == masques.shape
+
+    def test_les_deux_chemins_ont_la_meme_signature(self, corpus):
+        # Les deux alimentent `to_device` : une divergence casse l'évaluation
+        # sans toucher à l'entraînement, donc tard et à un mauvais moment.
+        store = TokenStore(corpus, val_tokens=10_000)
+        a = store.windows(batch_size=2, seq_len=16, seed=1)
+        b = next(iter(store.sequential_windows(batch_size=2, seq_len=16, limit=1)))
+        assert len(a) == len(b) == 2
+        assert a[0].shape == b[0].shape and a[1].shape == b[1].shape

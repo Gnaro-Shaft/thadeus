@@ -96,15 +96,26 @@ class Trainer:
     codec: Any = None
     hooks: list[Hook] = field(default_factory=list)
 
-    def to_device(self, windows: np.ndarray) -> tuple[torch.Tensor, torch.Tensor]:
+    def to_device(
+        self, windows: np.ndarray, masks: np.ndarray | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Découpe une fenêtre en entrée et cible décalée d'un cran.
 
         La conversion vers ``int64`` est nécessaire : les tokens sont stockés en
         ``uint16`` pour diviser par deux la taille du corpus, mais l'indexation
         d'embedding et l'entropie croisée exigent des entiers signés larges.
+
+        **Le masque devient un ``-100`` dans les cibles** — la valeur qu'ignore
+        l'entropie croisée. Le décalage compte : le masque du token *t* dit si
+        l'on veut prédire *t*, donc il s'aligne sur les cibles (``[1:]``), pas
+        sur les entrées.
         """
         batch = torch.from_numpy(windows.astype(np.int64)).to(self.device, non_blocking=True)
-        return batch[:, :-1], batch[:, 1:]
+        inputs, targets = batch[:, :-1], batch[:, 1:]
+        if masks is not None:
+            garde = torch.from_numpy(masks[:, 1:].astype(bool)).to(self.device)
+            targets = targets.masked_fill(~garde, -100)
+        return inputs, targets
 
     def micro_batch(self, step: int, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         """Tire un micro-lot, de façon reproductible à partir du pas.
@@ -114,13 +125,13 @@ class Trainer:
         et l'accumulation n'augmenterait pas la taille effective du lot — un
         bug qui ne produit aucune erreur, juste un modèle qui converge mal.
         """
-        windows = self.store.windows(
+        windows, masks = self.store.windows(
             batch_size=self.cfg.batch_size,
             seq_len=self.seq_len,
             seed=derive_seed(self.cfg.seed, "batch", step, index),
             split="train",
         )
-        return self.to_device(windows)
+        return self.to_device(windows, masks)
 
 
 def build_trainer(raw_config: dict[str, Any], *, artifact: Artifact) -> Trainer:
@@ -201,13 +212,23 @@ def _load_codec(store: TokenStore):
     name = store.meta.get("tokenizer")
     if not name:
         return None
-    path = ARTIFACT_ROOT / "tokenizer" / name
-    if not path.is_dir():
-        log.warning("Tokenizer %s introuvable — pas d'échantillons de texte", name)
-        return None
+
+    # Les métadonnées portent tantôt le nom complet du répertoire d'artefact
+    # (`bpe32k-b5c5528b`), tantôt le seul libellé (`bpe32k`) selon le script qui
+    # les a écrites. On accepte les deux : exiger une forme unique ferait perdre
+    # les échantillons de texte pour une raison purement cosmétique.
+    base = ARTIFACT_ROOT / "tokenizer"
+    chemin = base / name
+    if not chemin.is_dir():
+        candidats = [p for p in sorted(base.glob(f"{name}-*")) if (p / "tokenizer.json").is_file()]
+        if not candidats:
+            log.warning("Tokenizer %s introuvable — pas d'échantillons de texte", name)
+            return None
+        chemin = max(candidats, key=lambda p: p.stat().st_mtime)
+
     from thadeus.tokenizer.codec import Codec
 
-    return Codec.load(path)
+    return Codec.load(chemin)
 
 
 def train(raw_config: dict[str, Any], *, resume: bool = True) -> Artifact:

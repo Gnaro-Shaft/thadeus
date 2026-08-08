@@ -40,6 +40,7 @@ log = get_logger(__name__)
 # l'écriture. Deux rôles, deux fichiers.
 META = "tokens.json"
 SHARD_GLOB = "part-*.bin"
+MASK_SUFFIX = ".mask"
 _UINT16_MAX = 65_535
 
 
@@ -79,25 +80,32 @@ class TokenShardWriter:
 
         self.n_tokens = 0
         self.n_documents = 0
+        self.n_masked_tokens = 0
         self.shards: list[dict[str, Any]] = []
+        self.has_mask = False
+
         self._handle = None
+        self._mask_handle = None
         self._shard_tokens = 0
         self._buffer: list[np.ndarray] = []
+        self._mask_buffer: list[np.ndarray] = []
         self._buffered = 0
 
     def _open_shard(self) -> None:
         name = f"part-{len(self.shards):05d}.bin"
         self._handle = (self.directory / name).open("wb")
+        self._mask_handle = (self.directory / (name + MASK_SUFFIX)).open("wb")
         self.shards.append({"name": name, "n_tokens": 0})
         self._shard_tokens = 0
 
     def _flush(self) -> None:
         if not self._buffer:
             return
-        assert self._handle is not None
-        block = np.concatenate(self._buffer)
-        self._handle.write(block.tobytes())
+        assert self._handle is not None and self._mask_handle is not None
+        self._handle.write(np.concatenate(self._buffer).tobytes())
+        self._mask_handle.write(np.concatenate(self._mask_buffer).tobytes())
         self._buffer.clear()
+        self._mask_buffer.clear()
         self._buffered = 0
 
     def _close_shard(self) -> None:
@@ -107,25 +115,51 @@ class TokenShardWriter:
         self.shards[-1]["n_tokens"] = self._shard_tokens
         self._handle.close()
         self._handle = None
+        if self._mask_handle is not None:
+            self._mask_handle.close()
+            self._mask_handle = None
 
-    def write(self, ids: Iterable[int]) -> None:
-        """Ajoute les tokens d'un document.
+    def write(self, ids: Iterable[int], mask: Iterable[int] | None = None) -> None:
+        """Ajoute les tokens d'un document, avec un masque de perte optionnel.
 
-        Les écritures sont tamponnées puis concaténées : écrire quelques
-        centaines de tokens à la fois transformerait la tokenisation d'un corpus
-        en test de latence disque.
+        Le **masque** vaut 1 là où la perte doit être calculée, 0 ailleurs. Il
+        n'a de sens qu'en réglage par instructions : on veut que le modèle
+        apprenne à produire la **réponse**, pas à inventer la **question**.
+
+        Sans masque, un modèle entraîné sur « Question… Réponse… » consacre une
+        part de sa capacité à générer des questions — exactement la
+        confabulation qu'on cherche à réduire.
+
+        Le masque est **toujours écrit**, valant 1 partout par défaut. Un fichier
+        parallèle systématique évite d'avoir deux formats de corpus dont l'un
+        casserait le lecteur de l'autre ; le surcoût est d'un octet par token,
+        et le fichier se compresse à presque rien quand il est uniforme.
         """
         array = np.asarray(list(ids), dtype=self.dtype)
         if array.size == 0:
             return
+
+        if mask is None:
+            m = np.ones(array.size, dtype=np.uint8)
+        else:
+            m = np.asarray(list(mask), dtype=np.uint8)
+            if m.size != array.size:
+                raise ValueError(
+                    f"masque de {m.size} valeurs pour {array.size} tokens — "
+                    f"un décalage rendrait la perte incohérente sans lever d'erreur"
+                )
+            self.has_mask = True
+
         if self._handle is None or self._shard_tokens >= self.tokens_per_shard:
             self._close_shard()
             self._open_shard()
 
         self._buffer.append(array)
+        self._mask_buffer.append(m)
         self._buffered += array.size
         self._shard_tokens += array.size
         self.n_tokens += array.size
+        self.n_masked_tokens += int(m.sum())
         self.n_documents += 1
         if self._buffered >= 1_000_000:
             self._flush()
@@ -143,6 +177,8 @@ class TokenShardWriter:
             "vocab_size": self.vocab_size,
             "n_tokens": self.n_tokens,
             "n_documents": self.n_documents,
+            "n_masked_tokens": self.n_masked_tokens,
+            "has_mask": self.has_mask,
             "shards": self.shards,
             **self.metadata,
         }
@@ -192,6 +228,16 @@ class TokenStore:
             np.memmap(self.directory / shard["name"], dtype=self.dtype, mode="r")
             for shard in self.meta["shards"]
         ]
+        # Masques de perte, projetés en mémoire comme les tokens. Absents des
+        # corpus produits avant leur introduction : on retombe alors sur « tout
+        # compte », ce qui est le comportement d'un pré-entraînement.
+        self._masks = [
+            np.memmap(self.directory / (shard["name"] + MASK_SUFFIX), dtype=np.uint8, mode="r")
+            if (self.directory / (shard["name"] + MASK_SUFFIX)).is_file()
+            else None
+            for shard in self.meta["shards"]
+        ]
+        self.has_mask = bool(self.meta.get("has_mask")) and all(m is not None for m in self._masks)
         self._sizes = np.array([a.size for a in self._arrays], dtype=np.int64)
         self.n_tokens = int(self._sizes.sum())
 
@@ -211,17 +257,24 @@ class TokenStore:
             return self.n_train_tokens, self.n_tokens
         raise ValueError(f"split inconnu : {split!r} (attendu 'train' ou 'val')")
 
-    def _read(self, start: int, length: int) -> np.ndarray:
+    def _read_mask(self, start: int, length: int) -> np.ndarray:
+        """Masque correspondant à une fenêtre. Tout à 1 si le corpus n'en a pas."""
+        if not self.has_mask:
+            return np.ones(length, dtype=np.uint8)
+        return self._read(start, length, source=self._masks, dtype=np.uint8)
+
+    def _read(self, start: int, length: int, *, source=None, dtype=None) -> np.ndarray:
         """Lit ``length`` tokens depuis la position globale ``start``.
 
         Recolle les shards si la fenêtre chevauche une frontière, plutôt que de
         l'éviter : perdre systématiquement les tokens de bord biaiserait
         légèrement le corpus, et la fenêtre à cheval est un cas rare mais réel.
         """
-        out = np.empty(length, dtype=self.dtype)
+        tableaux = self._arrays if source is None else source
+        out = np.empty(length, dtype=dtype or self.dtype)
         written = 0
         offset = start
-        for array, size in zip(self._arrays, self._sizes, strict=True):
+        for array, size in zip(tableaux, self._sizes, strict=True):
             if offset >= size:
                 offset -= size
                 continue
@@ -240,8 +293,11 @@ class TokenStore:
         seq_len: int,
         seed: int,
         split: str = "train",
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Tire un lot de fenêtres aléatoires — **sans aucun état interne**.
+
+        Rend ``(fenêtres, masques)``. Le masque vaut 1 là où la perte compte ;
+        il vaut 1 partout sur un corpus de pré-entraînement.
 
         Le tirage ne dépend que de ``seed``, jamais d'un compteur interne. En
         dérivant la graine du numéro de pas, reprendre un entraînement au pas N
@@ -262,7 +318,9 @@ class TokenStore:
 
         rng = np.random.default_rng(seed)
         offsets = start + rng.integers(0, span, size=batch_size, dtype=np.int64)
-        return np.stack([self._read(int(o), seq_len + 1) for o in offsets])
+        fenetres = np.stack([self._read(int(o), seq_len + 1) for o in offsets])
+        masques = np.stack([self._read_mask(int(o), seq_len + 1) for o in offsets])
+        return fenetres, masques
 
     def sequential_windows(
         self, *, batch_size: int, seq_len: int, split: str = "val", limit: int | None = None
@@ -277,7 +335,12 @@ class TokenStore:
         window = seq_len + 1
         position, produced = start, 0
         while position + window * batch_size <= stop:
-            yield np.stack([self._read(position + i * window, window) for i in range(batch_size)])
+            yield (
+                np.stack([self._read(position + i * window, window) for i in range(batch_size)]),
+                np.stack(
+                    [self._read_mask(position + i * window, window) for i in range(batch_size)]
+                ),
+            )
             position += window * batch_size
             produced += 1
             if limit is not None and produced >= limit:

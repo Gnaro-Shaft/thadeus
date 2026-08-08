@@ -100,13 +100,13 @@ class EvalHook:
         trainer.model.eval()
         total, count = 0.0, 0
         with torch.no_grad():
-            for windows in trainer.store.sequential_windows(
+            for windows, masks in trainer.store.sequential_windows(
                 batch_size=trainer.cfg.batch_size,
                 seq_len=trainer.seq_len,
                 split="val",
                 limit=self.batches,
             ):
-                inputs, targets = trainer.to_device(windows)
+                inputs, targets = trainer.to_device(windows, masks)
                 with torch.autocast(trainer.device.type, dtype=trainer.dtype):
                     _, loss = trainer.model(inputs, targets=targets)
                 total += loss.item()
