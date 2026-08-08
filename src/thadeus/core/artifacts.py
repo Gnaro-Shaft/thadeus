@@ -19,6 +19,7 @@ ne demande jamais de fouiller un historique.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -70,10 +71,27 @@ def git_revision(repo: Path | None = None) -> str | None:
         return None
 
 
+def _machine_id() -> str:
+    """Identifiant de machine **pseudonyme**, stable d'un run à l'autre.
+
+    Le nom d'hôte brut est une donnée personnelle : sur un poste personnel il
+    contient couramment le nom de son propriétaire (« MacBook-de-Untel »). Or
+    les artefacts de banc sont versionnés volontairement — voir `.gitignore` —
+    donc ce nom finirait dans un dépôt public à chaque mesure.
+
+    Un condensé tronqué remplit exactement la même fonction : distinguer deux
+    machines et suivre l'une d'elles dans le temps, sans jamais la nommer. Ce
+    qui identifie réellement le matériel — `platform` et `device` — reste en
+    clair, puisque c'est ce qu'on compare.
+    """
+    empreinte = hashlib.blake2b(socket.gethostname().encode("utf-8"), digest_size=4)
+    return empreinte.hexdigest()
+
+
 def _environment() -> dict[str, Any]:
     """Contexte machine, pour comparer un run Mac et un run H100."""
     return {
-        "host": socket.gethostname(),
+        "machine": _machine_id(),
         "platform": platform.platform(),
         "python": platform.python_version(),
     }
