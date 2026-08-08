@@ -25,8 +25,16 @@ CIBLE="$HOME/Library/LaunchAgents"
 AGENTS=(com.thadeus.nightly com.thadeus.collect)
 
 etat() {
+    # `launchctl print` interroge **un** agent et fait autorité.
+    #
+    # La forme évidente — `launchctl list | grep -q "$nom"` — est piégeuse ici :
+    # `grep -q` sort dès la première correspondance et ferme le tube, `launchctl`
+    # reçoit un SIGPIPE, et `set -o pipefail` transforme ce succès en échec. Le
+    # résultat dépend alors de la position de l'agent dans la sortie : le premier
+    # listé était rapporté « absent » alors qu'il était parfaitement chargé.
+    # Un rapport faux, sans erreur visible.
     for nom in "${AGENTS[@]}"; do
-        if launchctl list | grep -q "$nom"; then
+        if launchctl print "gui/$(id -u)/$nom" > /dev/null 2>&1; then
             printf "  %-24s chargé\n" "$nom"
         else
             printf "  %-24s absent\n" "$nom"
