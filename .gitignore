@@ -34,3 +34,6 @@ __pycache__/
 !/artifacts/bench/**/results.json
 
 .DS_Store
+
+# Journaux de sessions planifiées : produits par les agents, jamais du code.
+/logs/

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Session d'entraînement nocturne — démarre à 00:00, rend la machine à 08:00.
+
+  Gabarit : `__THADEUS_ROOT__` est remplacé par `install.sh`. Ne pas y écrire de
+  chemin en dur — ce fichier est versionné.
+
+  `RunAtLoad` est volontairement absent : charger l'agent en pleine journée ne
+  doit pas déclencher un entraînement. Il attend son heure.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.thadeus.nightly</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__THADEUS_ROOT__/scripts/nightly.sh</string>
+        <string>08:00</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__THADEUS_ROOT__</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>0</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!--
+      Sorties de l'agent lui-même (échecs de lancement, erreurs de chemin). Le
+      journal de la session, lui, est écrit par le script dans logs/nightly-*.log.
+    -->
+    <key>StandardOutPath</key>
+    <string>__THADEUS_ROOT__/logs/launchd-nightly.out</string>
+    <key>StandardErrorPath</key>
+    <string>__THADEUS_ROOT__/logs/launchd-nightly.err</string>
+
+    <!--
+      Priorité normale : l'entraînement est la raison d'être de cette fenêtre,
+      il ne doit pas être bridé. La collecte, elle, est lancée avec `nice`.
+    -->
+    <key>Nice</key>
+    <integer>0</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

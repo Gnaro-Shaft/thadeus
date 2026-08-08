@@ -1,0 +1,64 @@
+# Entraînement continu — un run qui ne se termine jamais tout seul.
+#
+# **Le principe.** Le run principal (`medium_mup`) a consommé sa décroissance
+# WSD : son taux d'apprentissage est retombé à 8,66e-12, et un modèle à taux nul
+# n'apprend plus rien. Prolonger demande donc un run NOUVEAU, initialisé depuis
+# ses poids, avec un planificateur remis à neuf.
+#
+# **Pourquoi le palier ne redescend pas.** `decay_fraction = 0.0` place la
+# décroissance sur le tout dernier pas, c'est-à-dire nulle part en pratique : le
+# run reste à taux plein indéfiniment. C'est voulu. On ne veut pas atterrir
+# chaque nuit — atterrir, c'est figer le modèle. La décroissance sera déclenchée
+# une seule fois, le jour où l'on décide de s'arrêter, en relançant avec
+# `--set optim.schedule.decay_fraction=0.1` et un `total_steps` proche du pas
+# atteint.
+#
+# **Ce que couvre `total_steps`.** C'est un horizon, pas une promesse : 120 000
+# pas ≈ 11,8 Md de tokens, soit largement au-delà du corpus actuel. Le run
+# s'arrêtera bien avant, à la main ou faute de données neuves. Le chiffre ne
+# sert qu'à donner une échelle au planificateur — et comme il est exclu de
+# `identity()`, le changer reprend le run au lieu d'en créer un autre.
+#
+# **La reprise nocturne** repose sur `max_hours` : le run connaît sa fenêtre et
+# s'arrête de lui-même à la fin d'un pas, en écrivant un checkpoint. Relancer la
+# même commande le lendemain restaure poids, optimiseur ET numéro de pas.
+
+extends = "train/medium_mup.toml"
+
+label = "continuous"
+
+# Poids hérités du run principal ; optimiseur et planificateur repartent à neuf.
+# C'est le comportement voulu : l'état d'optimiseur de `medium_mup` a été
+# accumulé pendant sa décroissance finale, à des taux quasi nuls, et ne
+# représente plus rien d'utile pour repartir à taux plein.
+init_from = "artifacts/train/medium_mup-edd1c090/checkpoints/best.pt"
+
+# À faire pointer vers `thadeus_v2` après chaque régénération du corpus. Comme
+# les données font partie de `identity()`, changer cette valeur ouvre un nouveau
+# segment — d'où la régénération hebdomadaire plutôt que quotidienne : chaque
+# segment repaye une remise à zéro de l'optimiseur.
+tokens_label = "thadeus_v1"
+
+total_steps = 120_000    # horizon, pas une cible ; voir en-tête
+
+# Une session nocturne. Le script `nightly.sh` recalcule cette valeur à partir
+# de l'heure réelle de démarrage, pour que le run rende la machine à l'heure
+# même s'il a démarré en retard.
+max_hours = 8.0
+
+# Plus fréquent que le run principal : une nuit interrompue par autre chose
+# qu'un arrêt propre (panne de courant, veille forcée) ne doit pas coûter cher.
+checkpoint_every = 500
+keep_last = 3
+log_every = 50
+sample_every = 2_000
+
+[optim.schedule]
+name = "wsd"
+warmup_steps = 300       # ré-échauffement court : les poids savent déjà écrire
+decay_fraction = 0.0     # palier permanent — voir en-tête
+
+[eval]
+every = 1_000
+batches = 20
+val_tokens = 10_000_000

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Collecte quotidienne — élargit le corpus en journée, sans GPU.
+
+  Gabarit : `__THADEUS_ROOT__` est remplacé par `install.sh`.
+
+  Lancée à 10:00, soit deux heures après la fin de la fenêtre d'entraînement.
+  Le décalage est délibéré : une session qui a débordé doit avoir fini d'écrire
+  son checkpoint avant que la collecte ne se mette à saturer le disque. Le
+  script refuse de toute façon de démarrer si un entraînement tourne.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.thadeus.collect</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__THADEUS_ROOT__/scripts/collect_daily.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__THADEUS_ROOT__</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>10</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__THADEUS_ROOT__/logs/launchd-collect.out</string>
+    <key>StandardErrorPath</key>
+    <string>__THADEUS_ROOT__/logs/launchd-collect.err</string>
+
+    <!--
+      `nice` élevé : la collecte tourne pendant que la machine sert à autre
+      chose. Elle doit rester invisible à l'usage.
+    -->
+    <key>Nice</key>
+    <integer>10</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
