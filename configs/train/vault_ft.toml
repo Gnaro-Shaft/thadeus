@@ -1,0 +1,44 @@
+# Fine-tuning sur le Vault — spécialiser sans détruire.
+#
+# `init_from` et non reprise : on hérite des poids du pré-entraînement, mais
+# PAS de son état d'optimiseur. Celui-ci porte un momentum accumulé sur une
+# distribution de 4,5 M de documents web ; le réutiliser sur 4 000 notes
+# personnelles ferait diverger les premiers pas.
+#
+# Le taux d'apprentissage est **dix fois plus bas** que le pré-entraînement.
+# Un fine-tuning n'apprend pas la langue, il déplace légèrement un modèle qui
+# la connaît déjà. Un taux trop élevé écrase ce qu'on veut conserver.
+#
+# muP doit être IDENTIQUE au run de base : `logit_scale` fait partie de
+# l'architecture. Le changer réinterpréterait les poids chargés.
+
+extends = "train/medium_mup.toml"
+
+label = "vault_ft"
+init_from = "artifacts/train/medium_mup-edd1c090/checkpoints/best.pt"
+tokens_label = "vault_ft"
+
+batch_size = 8
+grad_accum = 4            # lot effectif ≈ 33 k tokens
+total_steps = 340         # ≈ un passage sur le corpus de fine-tuning
+
+log_every = 20
+checkpoint_every = 50
+sample_every = 100
+sample_prompt = "Dans ce projet, le principe retenu est"
+
+[optim]
+name = "adamw"
+lr = 1e-4                 # 10x sous le pré-entraînement
+weight_decay = 0.1
+grad_clip = 1.0
+
+[optim.schedule]
+name = "wsd"
+warmup_steps = 20
+decay_fraction = 0.4      # décroissance longue : on veut atterrir en douceur
+
+[eval]
+every = 50
+batches = 10
+val_tokens = 500_000      # indicatif ; la vraie mesure est sur les notes tenues à l'écart

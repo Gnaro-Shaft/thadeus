@@ -106,13 +106,16 @@ def _resolve_shards(artifact: str, source: str) -> Path:
     ne le signale.
     """
     base = ARTIFACT_ROOT / "data"
+    # `source="corpus"` désigne le mélange final de l'artefact, et non l'une de
+    # ses sources d'entrée. C'est ce qu'on veut pour rejouer un corpus complet.
+    sous_chemin = Path("corpus") if source == "corpus" else Path("sources") / source
     candidats = [
         p
         for p in sorted(base.glob(f"{artifact}-*"))
-        if (p / "meta.json").is_file() and (p / "sources" / source).is_dir()
+        if (p / "meta.json").is_file() and (p / sous_chemin).is_dir()
     ]
     if not candidats:
         raise FileNotFoundError(
-            f"aucun artefact achevé {artifact!r} contenant la source {source!r} sous {base}"
+            f"aucun artefact achevé {artifact!r} contenant {sous_chemin} sous {base}"
         )
-    return max(candidats, key=lambda p: (p / "meta.json").stat().st_mtime) / "sources" / source
+    return max(candidats, key=lambda p: (p / "meta.json").stat().st_mtime) / sous_chemin

@@ -408,3 +408,65 @@ class TestGutenberg:
 
         with pytest.raises(FileNotFoundError):
             list(from_gutenberg(root="/chemin/inexistant"))
+
+
+class TestSplitObsidian:
+    """Le split train/val du Vault — indispensable au fine-tuning."""
+
+    def vault(self, tmp_path, n=60):
+        for i in range(n):
+            (tmp_path / f"note_{i:03d}.md").write_text("mot " * 60, encoding="utf-8")
+        return str(tmp_path)
+
+    def test_train_et_val_sont_disjoints(self, tmp_path):
+        from thadeus.data.sources.obsidian import from_obsidian
+
+        v = self.vault(tmp_path)
+        tr = {d.id for d in from_obsidian(vault=v, split="train")}
+        va = {d.id for d in from_obsidian(vault=v, split="val")}
+        assert tr and va
+        assert not (tr & va), "aucune note ne doit être dans les deux"
+
+    def test_leur_union_est_le_tout(self, tmp_path):
+        from thadeus.data.sources.obsidian import from_obsidian
+
+        v = self.vault(tmp_path)
+        tout = {d.id for d in from_obsidian(vault=v, split="all")}
+        tr = {d.id for d in from_obsidian(vault=v, split="train")}
+        va = {d.id for d in from_obsidian(vault=v, split="val")}
+        assert tr | va == tout
+
+    def test_split_stable_entre_appels(self, tmp_path):
+        # Décidé par hachage du chemin, jamais par tirage : deux exécutions
+        # doivent donner exactement le même partage, sinon une note de
+        # validation finirait un jour dans l'entraînement.
+        from thadeus.data.sources.obsidian import from_obsidian
+
+        v = self.vault(tmp_path)
+        a = [d.id for d in from_obsidian(vault=v, split="val")]
+        b = [d.id for d in from_obsidian(vault=v, split="val")]
+        assert a == b
+
+    def test_ajouter_des_notes_ne_redistribue_pas_les_anciennes(self, tmp_path):
+        # Propriété du hachage par chemin : le Vault grandit sans jamais
+        # invalider un split déjà utilisé pour un entraînement.
+        from thadeus.data.sources.obsidian import from_obsidian
+
+        v = self.vault(tmp_path, n=40)
+        avant = {d.id for d in from_obsidian(vault=v, split="val")}
+        self.vault(tmp_path, n=80)
+        apres = {d.id for d in from_obsidian(vault=v, split="val")}
+        assert avant <= apres
+
+    def test_fraction_respectee(self, tmp_path):
+        from thadeus.data.sources.obsidian import from_obsidian
+
+        v = self.vault(tmp_path, n=200)
+        va = list(from_obsidian(vault=v, split="val", val_fraction=0.2))
+        assert 0.12 < len(va) / 200 < 0.30
+
+    def test_split_inconnu_rejete(self, tmp_path):
+        from thadeus.data.sources.obsidian import from_obsidian
+
+        with pytest.raises(ValueError, match="split inconnu"):
+            list(from_obsidian(vault=self.vault(tmp_path), split="test"))

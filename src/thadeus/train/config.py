@@ -62,6 +62,16 @@ class TrainConfig(Schema):
     compile: bool = True
 
     model_config_path: str = "model/small.toml"
+    # Checkpoint dont on **hérite les poids**, sans hériter de son état.
+    #
+    # À ne pas confondre avec la reprise : reprendre restaure poids, optimiseur
+    # ET numéro de pas pour continuer le MÊME run. Initialiser depuis un
+    # checkpoint démarre un run NOUVEAU — pas 0, optimiseur neuf, planificateur
+    # neuf — à partir de poids déjà entraînés. C'est ce que demande un
+    # fine-tuning : l'état d'optimiseur du pré-entraînement porte un momentum
+    # accumulé sur une autre distribution, et le réutiliser ferait diverger les
+    # premiers pas.
+    init_from: str | None = None
     tokens: str | None = None
     tokens_label: str = "fr_first"
 
@@ -114,6 +124,9 @@ class TrainConfig(Schema):
             "label": self.label,
             "seed": self.seed,
             "model_config_path": self.model_config_path,
+            # Deux fine-tunings partant de checkpoints différents sont deux
+            # expériences distinctes, même à config identique par ailleurs.
+            "init_from": self.init_from,
             "tokens": self.tokens,
             "tokens_label": self.tokens_label,
             "batch_size": self.batch_size,

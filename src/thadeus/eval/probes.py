@@ -32,7 +32,7 @@ import torch
 
 from thadeus.core.logs import get_logger
 
-__all__ = ["MinimalPair", "PROBES", "ProbeResult", "run_probes"]
+__all__ = ["ALL_PROBES", "HARD_PROBES", "MinimalPair", "PROBES", "ProbeResult", "run_probes"]
 
 log = get_logger(__name__)
 
@@ -98,6 +98,111 @@ PROBES: tuple[MinimalPair, ...] = (
     MinimalPair("code", "if x is not None:\n    x.close()", "if x is not None\n    x.close("),
 )
 
+# ---------------------------------------------------------------------------
+# Sondes difficiles.
+#
+# Les 26 sondes ci-dessus sont **saturées** : le modèle de base les passe toutes.
+# Un indicateur qui ne distingue plus rien n'informe pas — c'est exactement le
+# piège relevé en session 8, où un balayage concluait « l'optimum transfère » sur
+# trois lignes identiques.
+#
+# Celles-ci demandent de porter une dépendance sur plusieurs mots, ou de choisir
+# une forme que la fréquence brute ne suffit pas à trancher.
+# ---------------------------------------------------------------------------
+HARD_PROBES: tuple[MinimalPair, ...] = (
+    # Accord à distance : le verbe est séparé de son sujet par une subordonnée.
+    # La fréquence locale suggère le singulier (le mot juste avant est au
+    # singulier) ; seul le suivi de la dépendance donne la bonne réponse.
+    MinimalPair(
+        "accord_distant",
+        "Les mesures que le gouvernement a votées hier entrent en vigueur.",
+        "Les mesures que le gouvernement a votées hier entre en vigueur.",
+    ),
+    MinimalPair(
+        "accord_distant",
+        "Les fichiers que j'ai copiés sur le disque sont corrompus.",
+        "Les fichiers que j'ai copiés sur le disque est corrompu.",
+    ),
+    MinimalPair(
+        "accord_distant",
+        "Le rapport, malgré les nombreuses corrections, reste incomplet.",
+        "Le rapport, malgré les nombreuses corrections, restent incomplet.",
+    ),
+    # Participe passé : accord avec l'auxiliaire, l'un des points les plus
+    # difficiles du français écrit.
+    MinimalPair(
+        "participe",
+        "La lettre qu'elle a écrite est arrivée hier.",
+        "La lettre qu'elle a écrit est arrivée hier.",
+    ),
+    MinimalPair(
+        "participe",
+        "Elles se sont lavé les mains avant de manger.",
+        "Elles se sont lavées les mains avant de manger.",
+    ),
+    MinimalPair(
+        "participe",
+        "Les décisions qu'il a prises sont contestables.",
+        "Les décisions qu'il a pris sont contestables.",
+    ),
+    # Subjonctif imposé par la locution qui précède.
+    MinimalPair(
+        "subjonctif",
+        "Il faut que tu viennes avant la fermeture.",
+        "Il faut que tu viens avant la fermeture.",
+    ),
+    MinimalPair(
+        "subjonctif",
+        "Bien qu'il soit tard, nous continuons le travail.",
+        "Bien qu'il est tard, nous continuons le travail.",
+    ),
+    MinimalPair(
+        "subjonctif",
+        "Je doute qu'elle puisse terminer à temps.",
+        "Je doute qu'elle peut terminer à temps.",
+    ),
+    # Concordance des temps dans une hypothétique.
+    MinimalPair(
+        "concordance",
+        "Si j'avais su, je ne serais pas venu.",
+        "Si j'aurais su, je ne serais pas venu.",
+    ),
+    MinimalPair(
+        "concordance",
+        "Quand il arrivera, nous partirons ensemble.",
+        "Quand il arrivera, nous partions ensemble.",
+    ),
+    # Négation complète — l'oral supprime le « ne », l'écrit non.
+    MinimalPair(
+        "negation",
+        "Je ne vois personne dans la salle d'attente.",
+        "Je vois personne dans la salle d'attente.",
+    ),
+    MinimalPair(
+        "negation",
+        "Il n'y a aucune raison de s'inquiéter maintenant.",
+        "Il y a aucune raison de s'inquiéter maintenant.",
+    ),
+    # Code : erreurs sémantiques plausibles, pas syntaxiques.
+    MinimalPair(
+        "code_dur",
+        "with open(path) as f:\n    data = f.read()",
+        "with open(path) as f:\n    data = read(f)",
+    ),
+    MinimalPair(
+        "code_dur",
+        "for key, value in mapping.items():\n    print(key, value)",
+        "for key, value in mapping.keys():\n    print(key, value)",
+    ),
+    MinimalPair(
+        "code_dur",
+        "if isinstance(x, list):\n    x.append(1)",
+        "if isinstance(x, list):\n    x.push(1)",
+    ),
+)
+
+ALL_PROBES: tuple[MinimalPair, ...] = PROBES + HARD_PROBES
+
 
 @dataclass
 class ProbeResult:
@@ -148,7 +253,7 @@ def run_probes(
     *,
     device: torch.device,
     dtype: torch.dtype,
-    pairs: Sequence[MinimalPair] = PROBES,
+    pairs: Sequence[MinimalPair] = ALL_PROBES,
 ) -> dict[str, ProbeResult]:
     """Évalue toutes les sondes et agrège par catégorie.
 

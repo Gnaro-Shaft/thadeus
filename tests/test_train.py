@@ -292,3 +292,27 @@ class TestConfiguration:
 
         with pytest.raises(ValidationError):
             TrainConfig(batchsize=12)  # type: ignore[call-arg]
+
+
+class TestInitialisationDepuisCheckpoint:
+    """`init_from` hérite des poids, jamais de l'état d'optimiseur."""
+
+    def test_fait_partie_de_l_identite(self):
+        # Deux fine-tunings partant de checkpoints différents sont deux
+        # expériences distinctes, même à config identique par ailleurs.
+        a = TrainConfig(init_from="/chemin/a.pt")
+        b = TrainConfig(init_from="/chemin/b.pt")
+        assert a.identity() != b.identity()
+
+    def test_absent_par_defaut(self):
+        assert TrainConfig().init_from is None
+
+    def test_config_du_depot_valide(self):
+        cfg = TrainConfig(**load_config("train/vault_ft.toml"))
+        assert cfg.init_from and cfg.init_from.endswith(".pt")
+        assert cfg.tokens_label == "vault_ft"
+        # muP doit être identique au run de base, sinon les poids chargés
+        # seraient réinterprétés avec un autre facteur de logits.
+        base = TrainConfig(**load_config("train/medium_mup.toml"))
+        assert cfg.mup == base.mup
+        assert cfg.optim.lr < base.optim.lr, "un fine-tuning s'entraîne plus doucement"

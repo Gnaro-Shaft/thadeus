@@ -1,0 +1,54 @@
+# Corpus de fine-tuning — spécialiser sur le Vault sans oublier le français.
+#
+# Deux ingrédients, et le second n'est pas optionnel :
+#
+#   1. Les notes du Vault (split ENTRAÎNEMENT uniquement, 493 notes).
+#   2. Un REJEU du corpus de pré-entraînement, à volume comparable.
+#
+# Le rejeu prévient l'oubli catastrophique : entraîner 1 M de tokens d'un
+# domaine étroit sur un modèle qui en a vu 3,74 Md déplace ses poids vers cette
+# niche et dégrade tout le reste. Mélanger du corpus d'origine ancre le modèle.
+#
+# Le split est décisif : les 102 notes de validation ne sont JAMAIS vues ici.
+# À ce volume, un modèle peut mémoriser au lieu d'apprendre un style — et une
+# perplexité qui s'effondre sur des notes déjà vues ressemble exactement à une
+# réussite.
+
+label = "vault_ft"
+total_tokens = 9_000_000
+seed = 1337
+
+[dedup]
+enabled = true
+exact = true
+
+[shard]
+max_documents = 20_000
+max_bytes = 67_108_864
+
+[filters]
+notes = [
+    { name = "normalize" },
+    { name = "word_count", min_words = 40, max_words = 50_000 },
+]
+
+[[sources]]
+name = "obsidian"
+label = "vault"
+weight = 0.5
+max_repeats = 5.0        # ~5 passages sur 920 k tokens
+filters = "notes"
+[sources.options]
+vault = "~/dGnaro"
+lang = "fr"
+min_words = 30
+split = "train"          # les 102 notes de validation restent dehors
+
+[[sources]]
+name = "shards"
+label = "replay"
+weight = 0.5             # rejeu à parts égales — l'ancre contre l'oubli
+[sources.options]
+artifact = "thadeus_v1"
+source = "corpus"
+limit = 12_000

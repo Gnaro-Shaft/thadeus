@@ -77,6 +77,31 @@ def _find(stage: str, label: str) -> Path:
     return max(candidats, key=lambda p: (p / "meta.json").stat().st_mtime)
 
 
+def _find_run(label: str) -> Path | None:
+    """Localise le meilleur checkpoint d'un run, **même s'il est encore en cours**.
+
+    Contrairement à :func:`_find`, on ne cherche pas de ``meta.json`` : il n'est
+    écrit qu'à la **fin** de l'entraînement. Un run en cours a pourtant des
+    checkpoints parfaitement valides, et c'est précisément pendant qu'il tourne
+    qu'on veut mesurer sa qualité — sinon l'évaluation ne sert qu'à constater
+    après coup.
+
+    Ce détail a d'abord produit une évaluation d'apparence normale portant en
+    réalité sur un modèle **non entraîné** : l'artefact du run était jugé
+    inexistant, et le repli sur un modèle neuf donnait un rapport complet et
+    plausible. Le seul indice était un avertissement dans les journaux.
+    """
+    base = ARTIFACT_ROOT / "train"
+    candidats = [
+        p / "checkpoints" / "best.pt"
+        for p in sorted(base.glob(f"{label}-*"))
+        if (p / "checkpoints" / "best.pt").is_file()
+    ]
+    if not candidats:
+        return None
+    return max(candidats, key=lambda p: p.stat().st_mtime)
+
+
 def _load_model(cfg: EvalConfig, device: torch.device):
     """Charge le modèle depuis un checkpoint, ou le construit à neuf.
 
@@ -86,23 +111,38 @@ def _load_model(cfg: EvalConfig, device: torch.device):
     """
     from thadeus.core.config import load_config
     from thadeus.model import ModelConfig, Thadeus
+    from thadeus.optim.mup import MupConfig, logit_scale
     from thadeus.train.checkpoint import CheckpointManager
 
     model_cfg = ModelConfig(**load_config(cfg.model_config_path))
+
+    chemin = Path(cfg.checkpoint).expanduser() if cfg.checkpoint else _find_run(cfg.run_label)
+
+    if chemin is None or not chemin.is_file():
+        # Évaluer un modèle neuf est légitime (c'est la ligne de base), mais ce
+        # doit être un choix affiché, jamais un repli discret : un rapport complet
+        # sur un modèle non entraîné ressemble à s'y méprendre à un vrai résultat.
+        print("\n" + "!" * 68)
+        print(f"!!  MODELE NON ENTRAINE - aucun checkpoint pour le run {cfg.run_label!r}")
+        print("!!  Les chiffres ci-dessous sont la LIGNE DE BASE, pas un résultat.")
+        print("!" * 68)
+        log.warning("Aucun checkpoint pour %r — évaluation de la ligne de base", cfg.run_label)
+        return Thadeus(model_cfg).to(device), model_cfg, None
+
+    # **Rejouer la paramétrisation du run.** muP fixe un facteur de logits qui
+    # fait partie de l'architecture, pas de la conduite : un modèle entraîné avec
+    # `logit_scale = 1/8` et rechargé avec 1,0 produit des logits huit fois trop
+    # grands. Les sondes, qui *comparent* deux séquences, survivent au facteur ;
+    # la perplexité, non — elle explose. Ce piège a d'abord donné 8,5 millions de
+    # perplexité sur un modèle dont la génération était visiblement correcte.
+    payload = torch.load(chemin, map_location="cpu", weights_only=False)
+    mup = MupConfig(**payload.get("config", {}).get("mup", {}))
+    if mup.enabled:
+        facteur = logit_scale(model_cfg, mup)
+        model_cfg = model_cfg.model_copy(update={"logit_scale": facteur})
+        log.info("muP du run rejoué : logit_scale = %.4f", facteur)
+
     model = Thadeus(model_cfg).to(device)
-
-    chemin = Path(cfg.checkpoint).expanduser() if cfg.checkpoint else None
-    if chemin is None:
-        try:
-            chemin = _find("train", cfg.run_label) / "checkpoints" / "best.pt"
-        except FileNotFoundError:
-            log.warning("Aucun checkpoint trouvé — évaluation d'un modèle NON ENTRAÎNÉ (référence)")
-            return model, model_cfg, None
-
-    if not chemin.is_file():
-        log.warning("Checkpoint absent (%s) — évaluation d'un modèle NON ENTRAÎNÉ", chemin)
-        return model, model_cfg, None
-
     manager = CheckpointManager(chemin.parent)
     step = manager.restore(model=model, path=chemin)
     log.info("Checkpoint chargé : %s (pas %d)", chemin, step)

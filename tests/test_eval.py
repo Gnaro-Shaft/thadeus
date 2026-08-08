@@ -181,3 +181,33 @@ class TestGeneration:
     def test_sans_interdiction_tout_le_vocabulaire_est_atteignable(self, tiny_model):
         sortie = tiny_model.generate(torch.randint(0, VOCAB, (1, 4)), max_new_tokens=40)
         assert sortie.shape == (1, 44)
+
+
+class TestSondesDifficiles:
+    """Les sondes de base sont saturées ; celles-ci doivent discriminer."""
+
+    def test_categories_nouvelles(self):
+        from thadeus.eval.probes import HARD_PROBES
+
+        cats = {p.category for p in HARD_PROBES}
+        assert {"accord_distant", "participe", "subjonctif", "concordance"} <= cats
+
+    def test_longueurs_comparables(self):
+        # Une phrase nettement plus longue serait pénalisée par sa longueur :
+        # on mesurerait la longueur au lieu de la grammaire.
+        from thadeus.eval.probes import HARD_PROBES
+
+        for p in HARD_PROBES:
+            ecart = abs(len(p.good) - len(p.bad)) / max(len(p.good), len(p.bad))
+            assert ecart < 0.25, f"{p.category} : {p.good!r}"
+
+    def test_toutes_distinctes(self):
+        from thadeus.eval.probes import ALL_PROBES
+
+        paires = [(p.good, p.bad) for p in ALL_PROBES]
+        assert len(paires) == len(set(paires))
+
+    def test_all_probes_est_l_union(self):
+        from thadeus.eval.probes import ALL_PROBES, HARD_PROBES, PROBES
+
+        assert len(ALL_PROBES) == len(PROBES) + len(HARD_PROBES)

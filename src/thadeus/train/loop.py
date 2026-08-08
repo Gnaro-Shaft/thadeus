@@ -37,7 +37,7 @@ from thadeus.model import ModelConfig, Thadeus, estimate
 from thadeus.optim.build import build_optimizer
 from thadeus.optim.mup import MupConfig, apply_mup, logit_scale, lr_scales
 from thadeus.optim.schedules import SCHEDULES
-from thadeus.train.checkpoint import CheckpointManager
+from thadeus.train.checkpoint import CheckpointManager, unwrap
 from thadeus.train.config import TrainConfig
 from thadeus.train.hooks import CheckpointHook, Hook, default_hooks
 from thadeus.train.tokens import TokenStore
@@ -227,6 +227,19 @@ def train(raw_config: dict[str, Any], *, resume: bool = True) -> Artifact:
     )
     if start_step:
         log.info("Reprise au pas %d", start_step)
+    elif cfg.init_from:
+        # Poids seulement, jamais l'état d'optimiseur : celui-ci porte un
+        # momentum accumulé sur la distribution du pré-entraînement.
+        source = Path(cfg.init_from).expanduser()
+        if not source.is_file():
+            raise FileNotFoundError(f"checkpoint d'initialisation introuvable : {source}")
+        payload = torch.load(source, map_location="cpu", weights_only=False)
+        unwrap(trainer.model).load_state_dict(payload["model"], strict=True)
+        log.info(
+            "Poids initialisés depuis %s (entraîné jusqu'au pas %d) — optimiseur neuf",
+            source.name,
+            payload.get("step", -1),
+        )
 
     state = TrainState(step=start_step, total_steps=cfg.total_steps)
     tokens_per_step = cfg.effective_batch_tokens * trainer.seq_len
