@@ -40,6 +40,7 @@ from thadeus.optim.schedules import SCHEDULES
 from thadeus.train.checkpoint import CheckpointManager, unwrap
 from thadeus.train.config import TrainConfig
 from thadeus.train.hooks import CheckpointHook, Hook, default_hooks
+from thadeus.train.interrupt import GracefulStop
 from thadeus.train.tokens import TokenStore
 
 __all__ = ["TrainState", "Trainer", "find_tokens", "train"]
@@ -281,51 +282,87 @@ def train(raw_config: dict[str, Any], *, resume: bool = True) -> Artifact:
     trainer.model.train()
     started = time.perf_counter()
     last_time = started
+    interrompu = False
 
-    for step in range(start_step + 1, cfg.total_steps + 1):
-        # Le planificateur agit **multiplicativement** sur le taux de base de
-        # chaque groupe. Muon et AdamW ont des taux propres (facteur ~50) et des
-        # multiplicateurs muP distincts : un taux commun sous-réglerait l'un ou
-        # ferait diverger l'autre.
-        factor = trainer.schedule(step - 1)
-        for group in trainer.optimizer.param_groups:
-            group["lr"] = group["base_lr"] * factor
-        lr = trainer.optimizer.param_groups[0]["lr"]
+    with GracefulStop() as stop:
+        for step in range(start_step + 1, cfg.total_steps + 1):
+            # Le planificateur agit **multiplicativement** sur le taux de base de
+            # chaque groupe. Muon et AdamW ont des taux propres (facteur ~50) et des
+            # multiplicateurs muP distincts : un taux commun sous-réglerait l'un ou
+            # ferait diverger l'autre.
+            factor = trainer.schedule(step - 1)
+            for group in trainer.optimizer.param_groups:
+                group["lr"] = group["base_lr"] * factor
+            lr = trainer.optimizer.param_groups[0]["lr"]
 
-        total_loss = 0.0
-        for index in range(cfg.grad_accum):
-            inputs, targets = trainer.micro_batch(step, index)
-            with torch.autocast(trainer.device.type, dtype=trainer.dtype):
-                _, loss = trainer.model(inputs, targets=targets)
-            # Diviser avant l'accumulation : sinon le gradient est `grad_accum`
-            # fois trop grand, et le taux d'apprentissage effectif aussi.
-            (loss / cfg.grad_accum).backward()
-            total_loss += loss.item() / cfg.grad_accum
+            total_loss = 0.0
+            for index in range(cfg.grad_accum):
+                inputs, targets = trainer.micro_batch(step, index)
+                with torch.autocast(trainer.device.type, dtype=trainer.dtype):
+                    _, loss = trainer.model(inputs, targets=targets)
+                # Diviser avant l'accumulation : sinon le gradient est `grad_accum`
+                # fois trop grand, et le taux d'apprentissage effectif aussi.
+                (loss / cfg.grad_accum).backward()
+                total_loss += loss.item() / cfg.grad_accum
 
-        grad_norm = torch.nn.utils.clip_grad_norm_(trainer.model.parameters(), cfg.optim.grad_clip)
-        trainer.optimizer.step()
-        trainer.optimizer.zero_grad(set_to_none=True)
+            grad_norm = torch.nn.utils.clip_grad_norm_(
+                trainer.model.parameters(), cfg.optim.grad_clip
+            )
+            trainer.optimizer.step()
+            trainer.optimizer.zero_grad(set_to_none=True)
 
-        now = time.perf_counter()
-        state.step = step
-        state.loss = total_loss
-        state.lr = lr
-        state.grad_norm = float(grad_norm)
-        state.tokens_seen += tokens_per_step
-        state.tokens_per_second = tokens_per_step / (now - last_time)
-        state.mfu = compute_mfu(
-            state.tokens_per_second, trainer.flops_per_token, trainer.peak_flops
-        )
-        state.elapsed = now - started
-        last_time = now
+            now = time.perf_counter()
+            state.step = step
+            state.loss = total_loss
+            state.lr = lr
+            state.grad_norm = float(grad_norm)
+            state.tokens_seen += tokens_per_step
+            state.tokens_per_second = tokens_per_step / (now - last_time)
+            state.mfu = compute_mfu(
+                state.tokens_per_second, trainer.flops_per_token, trainer.peak_flops
+            )
+            state.elapsed = now - started
+            last_time = now
 
-        for hook in trainer.hooks:
-            hook(trainer, state)
+            for hook in trainer.hooks:
+                hook(trainer, state)
+
+            # Deux façons de s'arrêter, consultées **entre deux pas** et jamais
+            # pendant : le checkpoint écrit correspond ainsi toujours à un pas
+            # achevé, avec un optimiseur cohérent.
+            #
+            # Le budget de temps est la voie normale d'une session planifiée —
+            # le run connaît sa fenêtre. Le signal reste le filet : il rattrape
+            # tout ce qui tue le processus sans le prévenir.
+            if cfg.max_hours is not None and state.elapsed >= cfg.max_hours * 3600:
+                log.info(
+                    "Budget de %.2f h atteint au pas %d — arrêt propre.",
+                    cfg.max_hours,
+                    state.step,
+                )
+                interrompu = True
+                break
+            if stop.requested:
+                interrompu = True
+                break
 
     # Sauvegarde finale, quel que soit l'intervalle : un run qui se termine sans
     # checkpoint est un run perdu.
     CheckpointHook(every=1).save(trainer, state)
     trainer.metrics.close()
+
+    if interrompu:
+        # **`meta.json` n'est pas écrit.** C'est le marqueur d'achèvement d'un
+        # artefact : l'écrire ici ferait passer un run tronqué pour terminé, et
+        # la nuit suivante repartirait de zéro au lieu de reprendre.
+        log.info(
+            "Interrompu (%s) au pas %d/%d — checkpoint écrit, reprise possible.",
+            stop.signal_name or "arrêt demandé",
+            state.step,
+            cfg.total_steps,
+        )
+        return artifact
+
     artifact.write_meta(
         raw_config,
         mup=trainer.mup_factors,

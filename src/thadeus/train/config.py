@@ -79,6 +79,19 @@ class TrainConfig(Schema):
     grad_accum: int = 1
     total_steps: int = 10_000
 
+    # Budget de temps d'une session, en heures. Le run s'arrête **de lui-même**
+    # à l'échéance, à la fin du pas en cours, en écrivant un checkpoint.
+    #
+    # C'est ce qui rend un entraînement nocturne planifié sûr : le run connaît
+    # sa fenêtre au lieu de dépendre d'un signal extérieur pour l'apprendre.
+    # `total_steps` reste la cible du planificateur ; ce budget ne fait que
+    # découper le trajet en sessions, sans toucher au taux d'apprentissage.
+    #
+    # Comme `total_steps`, il relève de la **conduite** du run et non de son
+    # identité : il est donc absent de `identity()`, et changer sa valeur
+    # reprend le run au lieu d'en créer un nouveau.
+    max_hours: float | None = None
+
     optim: OptimSpec = Field(default_factory=OptimSpec)
     eval: EvalSpec = Field(default_factory=EvalSpec)
     mup: dict[str, Any] = Field(default_factory=dict)
