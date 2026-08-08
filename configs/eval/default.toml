@@ -15,7 +15,7 @@ seq_len = 1024
 # Les 18 romans du domaine public. Ils ne pèsent presque rien dans le corpus
 # (0,08 %) mais font le meilleur juge du français qu'on ait : littéraire,
 # cohérent, sans balisage — le contraire d'une page web.
-gutenberg_root = "~/LLM_personelle/datasets/gutenberg"
+gutenberg_root = "${THADEUS_GUTENBERG:-}"
 gutenberg_documents = 200
 
 probes = true

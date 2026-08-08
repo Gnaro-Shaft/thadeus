@@ -32,7 +32,7 @@ from thadeus.rag import BM25Index, answer, iter_vault_passages  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("question", nargs="+")
-    parser.add_argument("--vault", default="~/dGnaro")
+    parser.add_argument("--vault", default="${THADEUS_VAULT}")
     parser.add_argument("--model", default="vault_ft")
     parser.add_argument("-k", type=int, default=3, help="passages récupérés")
     parser.add_argument("--tokens", type=int, default=120)

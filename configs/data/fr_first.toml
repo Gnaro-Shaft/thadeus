@@ -189,7 +189,7 @@ weight = 0.03
 max_repeats = 3.0
 filters = "fr_text"
 [sources.options]
-root = "~/LLM_personelle/datasets/gutenberg"
+root = "${THADEUS_GUTENBERG}"
 lang = "fr"
 target_words = 1200
 
@@ -206,6 +206,6 @@ weight = 0.05
 max_repeats = 3.0
 filters = "notes"
 [sources.options]
-vault = "~/dGnaro"
+vault = "${THADEUS_VAULT}"
 lang = "fr"
 min_words = 30

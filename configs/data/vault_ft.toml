@@ -39,7 +39,7 @@ weight = 0.5
 max_repeats = 5.0        # ~5 passages sur 920 k tokens
 filters = "notes"
 [sources.options]
-vault = "~/dGnaro"
+vault = "${THADEUS_VAULT}"
 lang = "fr"
 min_words = 30
 split = "train"          # les 102 notes de validation restent dehors

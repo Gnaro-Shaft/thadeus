@@ -11,6 +11,7 @@ from thadeus.core.config import (
     Schema,
     config_hash,
     deep_merge,
+    expand_env,
     load_config,
     parse_override,
     set_by_path,
@@ -134,3 +135,72 @@ class TestSchema:
 
         with pytest.raises(ValidationError):
             Cfg().layers = 24  # type: ignore[misc]
+
+
+class TestVariablesDEnvironnement:
+    """Les configs décrivent *quelle* donnée on veut, pas où elle est rangée.
+
+    Avant ce mécanisme, les configs pointaient vers les chemins du poste de leur
+    auteur. Ce n'était pas un secret, mais c'était inutilisable ailleurs — et un
+    dépôt publié qui ne démarre chez personne n'est pas vraiment publié.
+    """
+
+    def test_substitution_simple(self, monkeypatch):
+        monkeypatch.setenv("THADEUS_TEST_CHEMIN", "/donnees/corpus")
+        assert expand_env("${THADEUS_TEST_CHEMIN}") == "/donnees/corpus"
+
+    def test_substitution_en_profondeur(self, monkeypatch):
+        monkeypatch.setenv("THADEUS_TEST_CHEMIN", "/x")
+        cfg = {"a": [{"b": "${THADEUS_TEST_CHEMIN}/notes"}], "c": 3}
+        assert expand_env(cfg) == {"a": [{"b": "/x/notes"}], "c": 3}
+
+    def test_valeur_de_repli(self, monkeypatch):
+        monkeypatch.delenv("THADEUS_TEST_ABSENTE", raising=False)
+        assert expand_env("${THADEUS_TEST_ABSENTE:-/defaut}") == "/defaut"
+
+    def test_repli_vide_autorise(self, monkeypatch):
+        # `${VAR:-}` signifie « facultatif » : l'évaluation doit pouvoir sauter
+        # une section plutôt que d'échouer parce qu'un corpus optionnel manque.
+        monkeypatch.delenv("THADEUS_TEST_ABSENTE", raising=False)
+        assert expand_env("${THADEUS_TEST_ABSENTE:-}") == ""
+
+    def test_variable_obligatoire_absente_leve(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("THADEUS_TEST_ABSENTE", raising=False)
+        # `.env` est rechargé en dernier recours ; on le neutralise pour que le
+        # test ne dépende pas du poste sur lequel il tourne.
+        monkeypatch.setattr("thadeus.core.env.DEFAULT_ENV", tmp_path / "absent.env")
+        with pytest.raises(KeyError, match="THADEUS_TEST_ABSENTE"):
+            expand_env("${THADEUS_TEST_ABSENTE}")
+
+    def test_les_valeurs_non_chaines_sont_intactes(self):
+        cfg = {"n": 12, "actif": True, "taux": 1e-3, "rien": None}
+        assert expand_env(cfg) == cfg
+
+    def test_load_config_substitue(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("THADEUS_TEST_CHEMIN", "/ailleurs")
+        write(tmp_path, "c.toml", 'vault = "${THADEUS_TEST_CHEMIN}"')
+        assert load_config(tmp_path / "c.toml")["vault"] == "/ailleurs"
+
+    def test_une_surcharge_peut_contenir_une_variable(self, tmp_path, monkeypatch):
+        # L'expansion doit passer APRÈS les surcharges, sinon `--set` ne pourrait
+        # pas s'en servir.
+        monkeypatch.setenv("THADEUS_TEST_CHEMIN", "/ailleurs")
+        write(tmp_path, "c.toml", 'vault = "/en-dur"')
+        cfg = load_config(tmp_path / "c.toml", overrides=["vault=${THADEUS_TEST_CHEMIN}"])
+        assert cfg["vault"] == "/ailleurs"
+
+    def test_le_hash_suit_la_valeur_resolue(self, tmp_path, monkeypatch):
+        # Deux corpus rangés à des endroits différents sont deux jeux de données
+        # différents : ils doivent produire des artefacts distincts.
+        write(tmp_path, "c.toml", 'vault = "${THADEUS_TEST_CHEMIN}"')
+        monkeypatch.setenv("THADEUS_TEST_CHEMIN", "/ici")
+        ici = config_hash(load_config(tmp_path / "c.toml"))
+        monkeypatch.setenv("THADEUS_TEST_CHEMIN", "/la")
+        assert config_hash(load_config(tmp_path / "c.toml")) != ici
+
+    def test_les_configs_du_depot_se_chargent(self, monkeypatch):
+        monkeypatch.setenv("THADEUS_VAULT", "/tmp/vault")
+        monkeypatch.setenv("THADEUS_GUTENBERG", "/tmp/gutenberg")
+        for nom in ("data/vault_ft.toml", "data/smoke.toml", "eval/default.toml"):
+            cfg = load_config(nom)
+            assert "${" not in str(cfg), f"{nom} garde une variable non résolue"

@@ -6,6 +6,10 @@ __pycache__/
 *.egg-info/
 .env
 .env.*
+# ...sauf le modèle, qui ne contient que des noms de variables et doit être
+# versionné : c'est lui qui dit à un nouveau venu quoi renseigner. La négation
+# vient APRÈS le motif qu'elle annule — l'ordre décide, en gitignore.
+!.env.example
 
 # Sorties de la chaîne — reproductibles à partir des configs, jamais versionnées.
 # La barre oblique INITIALE ancre le motif à la racine du dépôt. Sans elle,

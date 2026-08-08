@@ -60,7 +60,7 @@ class EvalConfig(Schema):
     max_documents: int = 400
     seq_len: int = 1024
 
-    gutenberg_root: str = "~/LLM_personelle/datasets/gutenberg"
+    gutenberg_root: str = ""
     gutenberg_documents: int = 200
 
     probes: bool = True
@@ -191,9 +191,21 @@ def evaluate(raw_config: dict[str, Any], *, force: bool = False) -> Artifact:
         log.warning("Corpus indisponible (%s) — perplexité par source ignorée", exc)
 
     # 2. Gutenberg : le juge du français littéraire.
-    gutenberg = list(
-        from_gutenberg(root=cfg.gutenberg_root, limit=cfg.gutenberg_documents, label="gutenberg")
-    )
+    #
+    # « Non configuré » et « configuré mais introuvable » sont deux situations
+    # distinctes. La première est normale — tout le monde n'a pas ce corpus
+    # local — et se traduit par une section absente du rapport. La seconde est
+    # une erreur de configuration, et `from_gutenberg` doit lever pour la
+    # signaler plutôt que de rendre un rapport amputé sans le dire.
+    if not cfg.gutenberg_root:
+        log.info("Gutenberg non configuré (THADEUS_GUTENBERG) — section ignorée")
+        gutenberg = []
+    else:
+        gutenberg = list(
+            from_gutenberg(
+                root=cfg.gutenberg_root, limit=cfg.gutenberg_documents, label="gutenberg"
+            )
+        )
     if gutenberg:
         livres = GroupedScore()
         par_livre = evaluate_documents(

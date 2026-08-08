@@ -80,7 +80,7 @@ def requete_depuis_corps(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--vault", default="~/dGnaro")
+    parser.add_argument("--vault", default="${THADEUS_VAULT}")
     parser.add_argument("--queries", type=int, default=200)
     parser.add_argument("--mode", default="corps", choices=("titre", "corps"))
     parser.add_argument(

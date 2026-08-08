@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import tomllib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -37,6 +39,7 @@ __all__ = [
     "Schema",
     "config_hash",
     "deep_merge",
+    "expand_env",
     "load_config",
     "parse_override",
     "set_by_path",
@@ -181,7 +184,63 @@ def load_config(
     for item in overrides:
         keys, value = parse_override(item)
         set_by_path(cfg, keys, value)
-    return cfg
+    # Après les surcharges — une surcharge doit pouvoir contenir une variable —
+    # et avant tout calcul de hash : c'est la valeur *résolue* qui identifie
+    # l'expérience. Deux corpus situés à des endroits différents sont deux jeux
+    # de données différents, et méritent des artefacts distincts.
+    return expand_env(cfg)
+
+
+_VARIABLE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+
+
+def expand_env(value: Any) -> Any:
+    """Remplace les ``${VARIABLE}`` d'une config par leur valeur d'environnement.
+
+    Deux formes :
+
+    - ``${THADEUS_VAULT}`` — obligatoire, lève si la variable est absente ;
+    - ``${THADEUS_VAULT:-~/notes}`` — avec valeur de repli.
+
+    **Pourquoi ce mécanisme existe.** Les configs référençaient des chemins du
+    poste de leur auteur (``~/dGnaro``). Ce n'est pas un secret, mais c'est
+    inutilisable sur une autre machine, et une config publiée doit décrire
+    *quelle donnée* on veut, pas *où elle est rangée chez quelqu'un*.
+    """
+    if isinstance(value, dict):
+        return {k: expand_env(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [expand_env(v) for v in value]
+    if isinstance(value, str) and "${" in value:
+        return _VARIABLE.sub(_substitute, value)
+    return value
+
+
+def _substitute(match: re.Match[str]) -> str:
+    name, fallback = match.group(1), match.group(2)
+    valeur = os.environ.get(name)
+    if valeur:
+        return valeur
+
+    # La variable manque peut-être simplement parce que `.env` n'a pas encore
+    # été chargé : plusieurs scripts ont déjà oublié de le faire, et le symptôme
+    # était une source de données silencieusement absente. On tente le
+    # chargement une fois avant de conclure à l'absence.
+    from thadeus.core.env import DEFAULT_ENV, load_dotenv
+
+    load_dotenv()
+    valeur = os.environ.get(name)
+    if valeur:
+        return valeur
+
+    if fallback is not None:
+        return fallback
+    raise KeyError(
+        f"variable d'environnement {name} absente, et référencée par une config. "
+        f"La définir dans {DEFAULT_ENV} (fichier non versionné) sous la forme "
+        f"{name}=/chemin/vers/les/donnees, ou l'exporter dans le shell. "
+        f"Voir .env.example pour la liste des variables attendues."
+    )
 
 
 def to_canonical_json(cfg: Mapping[str, Any]) -> str:

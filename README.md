@@ -57,7 +57,21 @@ frontière où le backend est visible.
 ```bash
 uv venv --python 3.12
 uv pip install -e ".[dev]"
+cp .env.example .env
 ```
+
+Les configs ne contiennent **aucun chemin en dur** : elles référencent des
+variables d'environnement avec la syntaxe `${NOM}`, renseignées dans `.env`
+(jamais versionné). Une variable obligatoire manquante fait échouer le
+chargement avec un message qui la nomme — plutôt que de laisser une source de
+données vide en silence, ce qui est arrivé une fois dans ce projet et a coûté
+une collecte entière.
+
+| Variable | Rôle | Requise |
+|---|---|---|
+| `THADEUS_VAULT` | répertoire de notes Markdown (RAG, réglage personnel) | pour ces usages |
+| `THADEUS_GUTENBERG` | livres du domaine public, évaluation du français | non |
+| `HF_TOKEN` | datasets Hugging Face à licence, débit de collecte | pour la collecte |
 
 Mesurer la machine (à rejouer tel quel sur le H100 — c'est ce qui permet de
 dimensionner le run final sur des mesures et non sur des estimations) :

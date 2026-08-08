@@ -64,7 +64,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", default="medium_mup")
     parser.add_argument("--tuned", default="vault_ft")
-    parser.add_argument("--vault", default="~/dGnaro")
+    parser.add_argument("--vault", default="${THADEUS_VAULT}")
     parser.add_argument("--corpus-label", default="thadeus_v1")
     parser.add_argument("--documents", type=int, default=150)
     args = parser.parse_args()
@@ -78,7 +78,7 @@ def main() -> int:
     # Les mêmes textes pour les deux modèles — sinon on ne compare rien.
     vault_val = list(from_obsidian(vault=args.vault, split="val"))
     corpus = list(iter_documents(_find("data", args.corpus_label) / "corpus", limit=args.documents))
-    gutenberg_root = Path("~/LLM_personelle/datasets/gutenberg").expanduser()
+    gutenberg_root = Path("${THADEUS_GUTENBERG}").expanduser()
     gut = (
         list(
             __import__("thadeus.data.sources.gutenberg", fromlist=["x"]).from_gutenberg(
