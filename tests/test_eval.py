@@ -211,3 +211,27 @@ class TestSondesDifficiles:
         from thadeus.eval.probes import ALL_PROBES, HARD_PROBES, PROBES
 
         assert len(ALL_PROBES) == len(PROBES) + len(HARD_PROBES)
+
+
+class TestGrainesDeGeneration:
+    """Régression : une graine commune corrèle les échantillons entre eux."""
+
+    def test_graines_derivees_toutes_distinctes(self):
+        # Le correctif de l'artefact « amusant » : chaque invite reçoit sa
+        # propre graine, dérivée de la graine du run. Reproductible sans être
+        # corrélé — c'est exactement ce pour quoi `derive_seed` existe.
+        from thadeus.core.seeding import derive_seed
+
+        graines = [derive_seed(1337, "sample", i) for i in range(8)]
+        assert len(set(graines)) == 8
+
+    def test_graines_reproductibles(self):
+        from thadeus.core.seeding import derive_seed
+
+        assert derive_seed(1337, "sample", 3) == derive_seed(1337, "sample", 3)
+
+    def test_graines_independantes_des_autres_etages(self):
+        # Ajouter un échantillon ne doit pas décaler le tirage des lots.
+        from thadeus.core.seeding import derive_seed
+
+        assert derive_seed(1337, "sample", 0) != derive_seed(1337, "batch", 0)

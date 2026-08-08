@@ -29,7 +29,7 @@ from thadeus.core.artifacts import ARTIFACT_ROOT, Artifact, open_artifact
 from thadeus.core.config import Schema
 from thadeus.core.device import describe, hot_path_dtype, resolve_device
 from thadeus.core.logs import get_logger
-from thadeus.core.seeding import seed_everything
+from thadeus.core.seeding import derive_seed, seed_everything
 from thadeus.eval.perplexity import GroupedScore, evaluate_documents
 from thadeus.eval.probes import format_probes, run_probes
 
@@ -216,9 +216,24 @@ def evaluate(raw_config: dict[str, Any], *, force: bool = False) -> Artifact:
         print("\n" + format_probes(resultats))
 
     # 4. Génération — ce qu'aucun chiffre ne montre.
+    #
+    # **Une graine dérivée PAR invite**, jamais une graine commune.
+    #
+    # Réinitialiser la même graine avant chaque échantillon paraît rendre les
+    # comparaisons « équitables ». C'est l'inverse : tous les échantillons
+    # partagent alors le même flux de nombres aléatoires, donc les mêmes tirages
+    # aux mêmes rangs. Avec des distributions de forme voisine — ce qu'elles sont
+    # toutes, puisqu'il s'agit de prose française —, le même token finit par
+    # sortir au même rang dans des textes sans aucun rapport.
+    #
+    # Constaté en Phase 8 : le mot « amusant » apparaissait au token 17 de CINQ
+    # invites différentes, y compris « La météo de demain sera ». Cela ressemblait
+    # à une pathologie du modèle ; c'était le générateur pseudo-aléatoire.
+    # Aucune autre graine ne le produisait.
     if cfg.generate:
         echantillons = []
-        for prompt in cfg.prompts:
+        for index, prompt in enumerate(cfg.prompts):
+            seed_everything(derive_seed(cfg.seed, "sample", index))
             ids = torch.tensor([codec.encode(prompt)], device=device)
             sortie = model.generate(
                 ids,
