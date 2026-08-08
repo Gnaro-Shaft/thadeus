@@ -23,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from thadeus.core.config import expand_env  # noqa: E402
 from thadeus.core.device import hot_path_dtype, resolve_device  # noqa: E402
 from thadeus.core.env import load_dotenv  # noqa: E402
 from thadeus.core.logs import setup_logging  # noqa: E402
@@ -45,7 +46,7 @@ def main() -> int:
     question = " ".join(args.question)
 
     index = BM25Index()
-    for p in iter_vault_passages(args.vault):
+    for p in iter_vault_passages(expand_env(args.vault)):
         index.add(p)
     index.build()
 

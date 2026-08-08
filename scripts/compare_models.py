@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import torch  # noqa: E402
 
+from thadeus.core.config import expand_env  # noqa: E402
 from thadeus.core.device import hot_path_dtype, resolve_device  # noqa: E402
 from thadeus.core.env import load_dotenv  # noqa: E402
 from thadeus.core.logs import setup_logging  # noqa: E402
@@ -76,9 +77,11 @@ def main() -> int:
     codec = Codec.load(_find("tokenizer", "bpe32k"))
 
     # Les mêmes textes pour les deux modèles — sinon on ne compare rien.
-    vault_val = list(from_obsidian(vault=args.vault, split="val"))
+    vault_val = list(from_obsidian(vault=expand_env(args.vault), split="val"))
     corpus = list(iter_documents(_find("data", args.corpus_label) / "corpus", limit=args.documents))
-    gutenberg_root = Path("${THADEUS_GUTENBERG}").expanduser()
+    # Repli vide : sans ce corpus optionnel, la comparaison saute la section
+    # plutôt que d'échouer.
+    gutenberg_root = Path(expand_env("${THADEUS_GUTENBERG:-}") or "/inexistant").expanduser()
     gut = (
         list(
             __import__("thadeus.data.sources.gutenberg", fromlist=["x"]).from_gutenberg(
