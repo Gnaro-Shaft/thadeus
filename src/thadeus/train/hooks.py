@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 import torch
 
 from thadeus.core.logs import get_logger
+from thadeus.core.seeding import derive_seed
 from thadeus.data.schema import format_tokens
 
 if TYPE_CHECKING:
@@ -75,10 +76,26 @@ class LogHook:
 class EvalHook:
     """Mesure la perte sur le split de validation.
 
-    Le parcours est **séquentiel et déterministe** (voir
-    ``TokenStore.sequential_windows``) : deux évaluations successives doivent
-    porter sur exactement les mêmes fenêtres, sinon la différence entre elles
-    mélange progrès du modèle et variance d'échantillonnage.
+    **Deux exigences, longtemps confondues.** Les fenêtres doivent être les
+    mêmes d'une évaluation à l'autre — sinon l'écart entre deux mesures mélange
+    progrès du modèle et variance d'échantillonnage. Mais elles doivent aussi
+    **représenter le split**, faute de quoi la mesure est stable et fausse.
+
+    La première version lisait le split séquentiellement depuis son début. Avec
+    ``batches = 20`` cela couvrait 163 840 tokens sur 10 millions, soit **1,6 %
+    du split, toujours au même endroit** — et cet endroit contenait du code
+    Python. La perte de validation valait donc 1,65 quand l'entraînement était à
+    2,34 : non pas un écart de régime, mais deux jeux de données différents. Une
+    dégradation du français serait passée totalement inaperçue.
+
+    Les fenêtres sont désormais tirées **au hasard dans tout le split**, avec une
+    graine dérivée de celle du run et **indépendante du pas**. Le tirage est
+    donc rejoué à l'identique à chaque évaluation : on garde la comparabilité
+    exacte, on gagne la représentativité, et on mesure enfin la même
+    distribution que celle sur laquelle le modèle s'entraîne.
+
+    Conséquence assumée : les ``val_loss`` d'avant ce changement ne sont pas
+    comparables à celles d'après.
     """
 
     every: int = 500
@@ -100,12 +117,15 @@ class EvalHook:
         trainer.model.eval()
         total, count = 0.0, 0
         with torch.no_grad():
-            for windows, masks in trainer.store.sequential_windows(
-                batch_size=trainer.cfg.batch_size,
-                seq_len=trainer.seq_len,
-                split="val",
-                limit=self.batches,
-            ):
+            for index in range(self.batches):
+                # La graine dépend du numéro de lot, jamais du pas : les mêmes
+                # fenêtres sont donc retirées à chaque évaluation du run.
+                windows, masks = trainer.store.windows(
+                    batch_size=trainer.cfg.batch_size,
+                    seq_len=trainer.seq_len,
+                    seed=derive_seed(trainer.cfg.seed, "val", index),
+                    split="val",
+                )
                 inputs, targets = trainer.to_device(windows, masks)
                 with torch.autocast(trainer.device.type, dtype=trainer.dtype):
                     _, loss = trainer.model(inputs, targets=targets)

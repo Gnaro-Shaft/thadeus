@@ -60,5 +60,8 @@ decay_fraction = 0.0     # palier permanent — voir en-tête
 
 [eval]
 every = 1_000
-batches = 20
+# 50 lots x 8 x 1024 = 410 k tokens, soit 4 % du split au lieu de 1,6 %. Les
+# fenêtres étant tirées au hasard à graine fixe, il s'agit d'un échantillon
+# aléatoire figé : l'agrandir réduit son biais sans coûter en comparabilité.
+batches = 50
 val_tokens = 10_000_000
