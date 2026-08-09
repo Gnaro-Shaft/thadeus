@@ -228,7 +228,16 @@ def section_entrainement(label: str) -> None:
 
     print(f"  run        : {run.name}   {'(achevé)' if acheve else '(reprenable)'}")
     print(f"  pas        : {pas:,}")
-    print(f"  tokens vus : {format_tokens(tokens)}   ·   {tokens / PARAMETRES:.1f} par paramètre")
+    # Le ratio tokens/paramètre porte sur ce que **le modèle** a vu, pas sur ce
+    # que ce run-ci a traité. Un run lancé par `init_from` hérite des tokens de
+    # son ancêtre : les ignorer afficherait 1,5 token par paramètre pour un
+    # modèle qui en a vu vingt, et suggérerait un modèle très sous-entraîné
+    # alors qu'il est à l'optimum de Chinchilla.
+    cumul = _tokens_traites()
+    print(f"  ce run     : {format_tokens(tokens)}")
+    print(
+        f"  cumul      : {format_tokens(cumul)}   ·   {cumul / PARAMETRES:.1f} tokens par paramètre"
+    )
     print(f"  perte      : {dernier['loss']:.4f}   ·   dernier point {_age(dernier.get('t', ''))}")
     print(
         f"  débit      : {dernier.get('tokens_per_second', 0):,.0f} tok/s"
@@ -317,8 +326,21 @@ def section_sessions() -> None:
     for journal in journaux[-7:]:
         taille = journal.stat().st_size
         quand = datetime.fromtimestamp(journal.stat().st_mtime, UTC).isoformat()
-        etat = "vide ⚠️" if taille < 200 else f"{taille // 1024} Ko"
-        print(f"    {journal.name:28s} {etat:>10s}   {_age(quand)}")
+        # Un journal court n'est pas forcément un échec : une session
+        # délibérément sautée (fenêtre trop courte, entraînement déjà en cours)
+        # écrit une ligne et sort. Juger sur la taille seule criait à l'alerte
+        # sur un comportement parfaitement normal — et une alerte qui se
+        # déclenche à tort finit par ne plus être lue du tout.
+        texte = journal.read_text(errors="replace")
+        if "session annulée" in texte or "session sautée" in texte:
+            etat = "sautée"
+        elif "Session terminée" in texte:
+            etat = f"{taille // 1024} Ko"
+        elif taille < 200:
+            etat = "vide ⚠️"
+        else:
+            etat = f"{taille // 1024} Ko ⚠️ inachevée"
+        print(f"    {journal.name:28s} {etat:>18s}   {_age(quand)}")
 
 
 def main() -> int:
