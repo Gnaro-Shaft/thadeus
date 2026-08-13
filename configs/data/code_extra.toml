@@ -13,6 +13,9 @@ extends = "data/code_only.toml"
 label = "code_extra"
 total_tokens = 600_000_000
 
+# La graine du flux n'est plus écrite ici : elle dérive de `seed` du corpus
+# et du label de la source (voir data/pipeline.py). Coder une graine en dur
+# figeait la tranche prélevée — deux collectes rendaient les mêmes documents.
 [[sources]]
 name = "huggingface"
 label = "code_python_extra"
@@ -24,7 +27,6 @@ data_dir = "data/python"
 lang = "code"
 limit = 600_000
 shuffle_buffer = 5_000
-seed = 7331
 text_field = "content"
 
 [[sources]]
@@ -38,5 +40,4 @@ data_dir = "data/javascript"
 lang = "code"
 limit = 300_000
 shuffle_buffer = 5_000
-seed = 7331
 text_field = "content"

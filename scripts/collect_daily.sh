@@ -9,14 +9,20 @@
 #
 # **Comment on obtient des documents NOUVEAUX.** La source Hugging Face lit en
 # streaming et n'a pas de curseur : relancer la même config re-lirait le même
-# début de flux. On fait donc varier la **graine de mélange** avec le jour, ce
+# début de flux. On fait donc varier la **graine du corpus** avec le jour, ce
 # qui change l'ordre des shards parcourus et donc la tranche obtenue.
 #
+# ⚠️ Cette surcharge a longtemps été sans effet. Les configs codaient une graine
+# en dur *dans chaque bloc `[[sources]]`*, et c'est celle-là que lisait le
+# lecteur de flux ; `--set seed=` ne pilotait que la déduplication et
+# l'entrelacement. Cinq collectes se sont ainsi révélées identiques à 98-99 %.
+# Depuis, la graine de chaque source **dérive** de celle du corpus (voir
+# `data/pipeline.py`), et faire varier `seed` change réellement la récolte.
+#
 # Le recouvrement n'est pas nul pour autant — deux tranches tirées au hasard
-# d'un même corpus se croisent. C'est assumé : la déduplication de l'assemblage
-# (MinHash + LSH) élimine les doublons, et `report.json` chiffre exactement
-# combien ont été jetés. Si ce taux monte, c'est le signal qu'il faut élargir
-# les sources plutôt que retirer davantage des mêmes.
+# d'un même corpus se croisent. C'est assumé, et surtout c'est **mesuré** :
+# chaque `report.json` porte une section `nouveaute` comparant la récolte du
+# jour à tous les corpus déjà possédés, et le pipeline hurle au-delà de 50 %.
 #
 # Chaque exécution écrit son propre artefact daté. L'assemblage hebdomadaire les
 # recolle via la source `shards`, exactement comme `fr_first_resume.toml` a

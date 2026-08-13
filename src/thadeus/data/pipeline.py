@@ -29,6 +29,7 @@ from thadeus.core.seeding import derive_seed, seed_everything
 from thadeus.data.clean import build_pipeline
 from thadeus.data.dedup import Deduplicator, MinHashDeduplicator
 from thadeus.data.mix import Mixture, plan_mixture
+from thadeus.data.novelty import compare_to_existing
 from thadeus.data.schema import Document, estimate_tokens, format_tokens
 from thadeus.data.shard import ShardWriter, iter_documents, shard_paths
 from thadeus.data.sources import SOURCES
@@ -105,7 +106,28 @@ def _collect(cfg: CorpusConfig, artifact: Artifact) -> dict[str, Any]:
     for spec in cfg.sources:
         out_dir = artifact.path / "sources" / spec.label
         stream: Iterator[Document] = SOURCES.build(
-            {"name": spec.name, **spec.options}, label=spec.label
+            {
+                "name": spec.name,
+                # **La graine du flux dérive de celle du corpus.** Sans cela,
+                # une source garde la graine écrite en dur dans son bloc TOML :
+                # deux collectes de même config rendent alors exactement les
+                # mêmes documents, quoi qu'on demande par ailleurs.
+                #
+                # Ce n'était pas théorique : cinq collectes quotidiennes lancées
+                # avec `--set seed=<jour>` se sont révélées identiques à 98-99 %,
+                # parce que la surcharge n'atteignait que la déduplication et
+                # l'entrelacement. Cinq jours de téléchargement pour zéro
+                # document nouveau, sans le moindre signal d'erreur.
+                #
+                # La dérivation dépend aussi du **label** : deux sources tirant
+                # du même dataset prélèvent des tranches différentes, ce que les
+                # configs obtenaient jusqu'ici en codant des graines à la main.
+                "seed": derive_seed(cfg.seed, "source", spec.label),
+                # Placé après, un réglage explicite l'emporte toujours — pour
+                # rejouer une tranche précise à l'identique.
+                **spec.options,
+            },
+            label=spec.label,
         )
 
         if spec.filters:
@@ -254,7 +276,17 @@ def build_corpus(raw_config: dict[str, Any], *, force: bool = False) -> Artifact
             src: estimate_tokens(words) for src, words in writer.words_per_source.items()
         },
     }
-    artifact.write_json("report.json", {**report, "mixture": mixture.to_dict(), "corpus": final})
+    # Ce que la collecte apporte de NOUVEAU, et pas seulement ce qu'elle pèse.
+    # Sans cette mesure, cinq collectes quasi identiques ont annoncé « 2,03 Md »
+    # chacune pendant cinq nuits sans que rien ne le signale.
+    nouveaute = compare_to_existing(
+        artifact.path / "corpus", root=artifact.root / "data", exclude=artifact.path.name
+    )
+
+    artifact.write_json(
+        "report.json",
+        {**report, "mixture": mixture.to_dict(), "corpus": final, "nouveaute": nouveaute},
+    )
     artifact.write_meta(raw_config, corpus=final, warnings=mixture.warnings)
 
     log.info(

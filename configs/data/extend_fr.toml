@@ -15,6 +15,9 @@ extends = "data/fr_first.toml"
 label = "extend_fr"
 total_tokens = 2_500_000_000
 
+# La graine du flux n'est plus écrite ici : elle dérive de `seed` du corpus
+# et du label de la source (voir data/pipeline.py). Coder une graine en dur
+# figeait la tranche prélevée — deux collectes rendaient les mêmes documents.
 [[sources]]
 name = "huggingface"
 label = "fineweb_fr_extra"
@@ -26,7 +29,6 @@ config = "fra_Latn"
 lang = "fr"
 limit = 1_400_000
 shuffle_buffer = 10_000
-seed = 7331          # ≠ 1337 : autre tranche du dataset
 
 [[sources]]
 name = "huggingface"
@@ -39,4 +41,3 @@ config = "20231101.fr"
 lang = "fr"
 limit = 1_400_000    # Wikipédia FR compte ~2,6 M d'articles
 shuffle_buffer = 10_000
-seed = 7331
