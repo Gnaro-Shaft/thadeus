@@ -46,8 +46,16 @@ if pgrep -f "scripts/train.py" > /dev/null; then
     exit 0
 fi
 
-if [ -d "artifacts/data/${LABEL}"-* ] 2>/dev/null; then
-    echo "Collecte du jour déjà faite (${LABEL})." | tee -a "$LOG"
+# **Achevée**, pas seulement commencée : `meta.json` est le marqueur de fin.
+# Tester l'existence du répertoire faisait passer une collecte en cours — ou
+# morte à mi-parcours — pour un travail accompli, et la journée était sautée.
+if compgen -G "artifacts/data/${LABEL}-*/meta.json" > /dev/null; then
+    echo "Collecte du jour déjà achevée (${LABEL})." | tee -a "$LOG"
+    exit 0
+fi
+
+if pgrep -f "scripts/build_corpus.py" > /dev/null; then
+    echo "Une collecte tourne déjà — abandon." | tee -a "$LOG"
     exit 0
 fi
 

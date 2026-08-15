@@ -8,7 +8,12 @@ run_label = "medium_mup"          # d'où vient le checkpoint
 model_config_path = "model/medium.toml"
 tokenizer_label = "bpe32k"
 
-corpus_label = "fr_first_v2"
+# Le corpus d'évaluation est FIGÉ ici, et ce n'est pas cosmétique : deux
+# évaluations portant sur des documents différents ne se comparent pas, même
+# quand leurs colonnes se ressemblent. Laissé sur `fr_first_v2` alors que le
+# run de référence utilisait `thadeus_v1`, ce réglage a produit une perplexité
+# de 30,98 face à 22,70 — un écart entièrement dû au changement de corpus.
+corpus_label = "thadeus_v1"
 max_documents = 400
 seq_len = 1024
 

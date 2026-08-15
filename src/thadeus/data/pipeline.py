@@ -15,6 +15,7 @@ nouvelle nuit de téléchargement.
 
 from __future__ import annotations
 
+import inspect
 import random
 from collections.abc import Iterator
 from pathlib import Path
@@ -105,6 +106,12 @@ def _collect(cfg: CorpusConfig, artifact: Artifact) -> dict[str, Any]:
 
     for spec in cfg.sources:
         out_dir = artifact.path / "sources" / spec.label
+        # Toutes les sources ne tirent pas au hasard : relire des shards déjà
+        # écrits ou parcourir un répertoire est déterministe par nature, et ces
+        # fonctions n'acceptent pas de graine. La passer quand même faisait
+        # échouer l'assemblage entier sur un `TypeError`.
+        accepte_graine = "seed" in inspect.signature(SOURCES.get(spec.name)).parameters
+        graine = {"seed": derive_seed(cfg.seed, "source", spec.label)} if accepte_graine else {}
         stream: Iterator[Document] = SOURCES.build(
             {
                 "name": spec.name,
@@ -122,7 +129,7 @@ def _collect(cfg: CorpusConfig, artifact: Artifact) -> dict[str, Any]:
                 # La dérivation dépend aussi du **label** : deux sources tirant
                 # du même dataset prélèvent des tranches différentes, ce que les
                 # configs obtenaient jusqu'ici en codant des graines à la main.
-                "seed": derive_seed(cfg.seed, "source", spec.label),
+                **graine,
                 # Placé après, un réglage explicite l'emporte toujours — pour
                 # rejouer une tranche précise à l'identique.
                 **spec.options,

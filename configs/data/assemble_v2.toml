@@ -1,0 +1,159 @@
+# Assemblage v2 — intègre les deux collectes obtenues APRÈS le correctif de graine.
+#
+# Les collectes daily_20260809 à 20260813 sont volontairement ABSENTES : elles
+# recouvrent `extend_fr` à 98,8 % (graine de source figée à 7331, voir le commit
+# « La graine des sources ne dérivait pas de celle du corpus »). Les inclure
+# n'ajouterait rien et ferait travailler la déduplication pour rien.
+#
+# **Le français passe de 65 % à 82 %.** Ce n'est pas un renoncement sur le code :
+# en valeur absolue il progresse (840 M contre 612 M dans thadeus_v1), tout comme
+# l'anglais (777 M contre 763 M). Seule la proportion baisse, parce que le
+# français est la seule dimension où l'on a pu collecter davantage — et c'est
+# aussi la faiblesse mesurée du modèle : perplexité 24-27 sur la prose française
+# contre 4,5 sur le code.
+#
+# Les poids reproduisent les volumes réellement disponibles, pour que le plan de
+# mélange n'ait aucun déficit à signaler.
+
+extends = "data/fr_first.toml"
+
+label = "thadeus_v2"
+total_tokens = 9_215_000_000
+
+# --- Français ---
+
+[[sources]]
+name = "shards"
+label = "fineweb_fr"
+weight = 0.09888
+[sources.options]
+artifact = "fr_first_v2"
+source = "fineweb_fr"
+
+[[sources]]
+name = "shards"
+label = "fineweb_fr_extra"
+weight = 0.11053
+[sources.options]
+artifact = "extend_fr"
+source = "fineweb_fr_extra"
+
+[[sources]]
+name = "shards"
+label = "fineweb_fr_d14"
+weight = 0.11493
+[sources.options]
+artifact = "daily_20260814"
+source = "fineweb_fr_extra"
+
+[[sources]]
+name = "shards"
+label = "fineweb_fr_d15"
+weight = 0.11426
+[sources.options]
+artifact = "daily_20260815"
+source = "fineweb_fr_extra"
+
+[[sources]]
+name = "shards"
+label = "wikipedia_fr"
+weight = 0.03347
+[sources.options]
+artifact = "fr_first_v2"
+source = "wikipedia_fr"
+
+[[sources]]
+name = "shards"
+label = "wikipedia_fr_extra"
+weight = 0.10976
+[sources.options]
+artifact = "extend_fr"
+source = "wikipedia_fr_extra"
+
+[[sources]]
+name = "shards"
+label = "wikipedia_fr_d14"
+weight = 0.07963
+[sources.options]
+artifact = "daily_20260814"
+source = "wikipedia_fr_extra"
+
+[[sources]]
+name = "shards"
+label = "wikipedia_fr_d15"
+weight = 0.09797
+[sources.options]
+artifact = "daily_20260815"
+source = "wikipedia_fr_extra"
+
+[[sources]]
+name = "shards"
+label = "books_fr"
+weight = 0.06448
+[sources.options]
+artifact = "fr_first_v2"
+source = "books_fr"
+
+[[sources]]
+name = "shards"
+label = "gutenberg"
+weight = 0.00031
+max_repeats = 3.0
+[sources.options]
+artifact = "fr_first_v2"
+source = "gutenberg"
+
+# --- Technique anglais ---
+
+[[sources]]
+name = "shards"
+label = "fineweb_edu"
+weight = 0.08431
+[sources.options]
+artifact = "fr_first_v2"
+source = "fineweb_edu"
+
+# --- Code ---
+
+[[sources]]
+name = "shards"
+label = "code_python"
+weight = 0.02557
+[sources.options]
+artifact = "code_only"
+source = "code_python"
+
+[[sources]]
+name = "shards"
+label = "code_python_extra"
+weight = 0.03807
+[sources.options]
+artifact = "code_extra"
+source = "code_python_extra"
+
+[[sources]]
+name = "shards"
+label = "code_web"
+weight = 0.01104
+[sources.options]
+artifact = "code_only"
+source = "code_web"
+
+[[sources]]
+name = "shards"
+label = "code_web_extra"
+weight = 0.01668
+[sources.options]
+artifact = "code_extra"
+source = "code_web_extra"
+
+# --- Notes personnelles ---
+
+[[sources]]
+name = "shards"
+label = "obsidian"
+weight = 0.00010
+max_repeats = 3.0
+[sources.options]
+artifact = "fr_first_v2"
+source = "obsidian"
