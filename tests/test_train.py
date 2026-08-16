@@ -103,11 +103,14 @@ class TestChargeur:
         assert not np.array_equal(a, b)
 
     def test_validation_disjointe_de_l_entrainement(self, corpus):
-        store = TokenStore(corpus, val_tokens=10_000)
+        # La validation est faite de blocs répartis (voir `train/splits.py`) ;
+        # la propriété qui compte est inchangée : zones disjointes et couvrantes.
+        store = TokenStore(corpus, val_tokens=10_000, val_blocks=10)
         assert store.n_train_tokens == 50_000
-        train_start, train_stop = store._split_bounds("train")
-        val_start, val_stop = store._split_bounds("val")
-        assert train_stop == val_start, "les splits doivent être adjacents et disjoints"
+        occupe = np.zeros(store.n_tokens, dtype=np.int8)
+        for debut, longueur in store._zones("train") + store._zones("val"):
+            occupe[debut : debut + longueur] += 1
+        assert occupe.min() == 1 and occupe.max() == 1
 
     def test_parcours_sequentiel_deterministe(self, corpus):
         # Deux évaluations doivent porter sur les mêmes fenêtres, sinon leur
@@ -118,13 +121,14 @@ class TestChargeur:
         assert all(np.array_equal(x, y) for x, y in zip(a, b, strict=True))
 
     def test_split_trop_court_rejete(self, corpus):
-        store = TokenStore(corpus, val_tokens=100)
-        with pytest.raises(ValueError, match="trop court"):
+        # Aucun bloc ne peut contenir la fenêtre : il faut le dire, pas tronquer.
+        store = TokenStore(corpus, val_tokens=1_000, val_blocks=10)
+        with pytest.raises(ValueError, match="aucune zone"):
             store.windows(batch_size=1, seq_len=500, seed=1, split="val")
 
     def test_split_inconnu_rejete(self, corpus):
         with pytest.raises(ValueError, match="split inconnu"):
-            TokenStore(corpus)._split_bounds("test")
+            TokenStore(corpus)._zones("test")
 
 
 class TestMasqueDePerte:

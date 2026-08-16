@@ -54,15 +54,27 @@ class TrainerFactice:
         return w[:, :-1], w[:, 1:]
 
 
-def corpus_marque(tmp_path, tokens_entrainement: int, tokens_val: int):
-    """Corpus dont le split de validation change de contenu à mi-parcours."""
-    directory = tmp_path / "tokens"
+def corpus_marque(tmp_path, tokens_entrainement: int, tokens_val: int, blocs: int = 8):
+    """Corpus dont les blocs de validation changent de contenu à mi-parcours.
+
+    La validation n'est plus une tranche finale mais des blocs répartis sur
+    toute la longueur (voir `train/splits.py`). On marque donc la **première
+    moitié des blocs** avec TETE et la seconde avec QUEUE : une lecture qui ne
+    visiterait que les premiers blocs ne verrait jamais QUEUE.
+    """
+    from thadeus.train.splits import decouper
+
+    n = tokens_entrainement + tokens_val
+    zones, _ = decouper(n, tokens_val, blocs)
     rng = np.random.default_rng(0)
+    tokens = rng.integers(0, 10, size=n).astype(np.uint16)
+    for i, (debut, longueur) in enumerate(zones):
+        tokens[debut : debut + longueur] = TETE if i < len(zones) // 2 else QUEUE
+
+    directory = tmp_path / "tokens"
     with TokenShardWriter(directory, vocab_size=VOCAB, tokens_per_shard=10_000_000) as writer:
-        writer.write(rng.integers(0, 10, size=tokens_entrainement).tolist())
-        writer.write([TETE] * (tokens_val // 2))
-        writer.write([QUEUE] * (tokens_val - tokens_val // 2))
-    return TokenStore(directory, val_tokens=tokens_val)
+        writer.write(tokens.tolist())
+    return TokenStore(directory, val_tokens=tokens_val, val_blocks=blocs)
 
 
 def _hook_et_trainer(tmp_path, batches: int = 20):

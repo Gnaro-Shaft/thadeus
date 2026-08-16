@@ -28,6 +28,7 @@ from typing import Any, Self
 import numpy as np
 
 from thadeus.core.logs import get_logger
+from thadeus.train.splits import decouper, parcourir, tirer_positions
 
 __all__ = ["TokenShardWriter", "TokenStore", "dtype_for_vocab"]
 
@@ -203,14 +204,39 @@ class TokenStore:
 
     Args:
         directory: répertoire produit par :class:`TokenShardWriter`.
-        val_tokens: tokens réservés à la validation, pris à la **fin** du
-            corpus. Le corpus étant mélangé à la construction (voir
-            ``data/pipeline.py``), une tranche finale est un échantillon
-            représentatif — et la réserver ainsi est trivialement reproductible.
+        val_tokens: tokens réservés à la validation, prélevés en **blocs
+            répartis sur toute la longueur** du corpus.
+        val_blocks: nombre de ces blocs.
+
+    **Pourquoi des blocs répartis et non une tranche finale.** La validation
+    était d'abord prise à la fin du corpus, en supposant qu'un corpus mélangé
+    rendait sa queue représentative. La mesure a démenti l'hypothèse : la
+    composition **dérive** le long du fichier, parce que les sources s'épuisent
+    à des rythmes différents pendant l'entrelacement. La queue de
+    ``thadeus_v1`` contenait 27 % de code contre 12 % dans le reste, et le code
+    est bien plus facile à prédire que la prose. La perte de validation valait
+    ainsi 1,65 quand l'entraînement était à 2,34 — non pas un écart de régime,
+    mais deux distributions différentes. Une dégradation du français serait
+    passée totalement inaperçue.
+
+    Prélever une centaine de blocs régulièrement espacés donne le même volume
+    tenu à l'écart, mais un échantillon qui suit la composition réelle du
+    corpus. Le découpage reste entièrement déterministe : il ne dépend que de
+    la taille du corpus et des deux paramètres ci-dessus.
+
+    **L'étanchéité est garantie par construction**, pas par un rejet
+    d'échantillons : les offsets d'entraînement sont tirés dans un espace
+    d'index qui ne contient que les intervalles hors blocs, puis projetés
+    dessus. Aucune fenêtre d'entraînement ne peut chevaucher un bloc de
+    validation, même partiellement — une fuite ici rendrait la validation
+    complaisante sans qu'aucune erreur ne se manifeste.
     """
 
     directory: Path
     val_tokens: int = 0
+    # 64 blocs suffisent à suivre la composition d'un corpus entrelacé, tout en
+    # laissant des blocs assez longs pour contenir des fenêtres entières.
+    val_blocks: int = 64
 
     def __post_init__(self) -> None:
         self.directory = Path(self.directory)
@@ -245,16 +271,20 @@ class TokenStore:
             raise ValueError(
                 f"val_tokens ({self.val_tokens}) >= taille du corpus ({self.n_tokens})"
             )
+        self._val_zones, self._train_zones = self._decouper()
 
     @property
     def n_train_tokens(self) -> int:
-        return self.n_tokens - self.val_tokens
+        return self.n_tokens - sum(longueur for _, longueur in self._val_zones)
 
-    def _split_bounds(self, split: str) -> tuple[int, int]:
+    def _decouper(self) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+        return decouper(self.n_tokens, self.val_tokens, self.val_blocks)
+
+    def _zones(self, split: str) -> list[tuple[int, int]]:
         if split == "train":
-            return 0, self.n_train_tokens
+            return self._train_zones
         if split == "val":
-            return self.n_train_tokens, self.n_tokens
+            return self._val_zones
         raise ValueError(f"split inconnu : {split!r} (attendu 'train' ou 'val')")
 
     def _read_mask(self, start: int, length: int) -> np.ndarray:
@@ -309,15 +339,8 @@ class TokenStore:
         les données, et le modèle revoit les mêmes lots sans qu'aucune erreur
         ne se manifeste.
         """
-        start, stop = self._split_bounds(split)
-        span = stop - start - seq_len - 1
-        if span <= 0:
-            raise ValueError(
-                f"split {split!r} trop court ({stop - start} tokens) pour seq_len={seq_len}"
-            )
-
         rng = np.random.default_rng(seed)
-        offsets = start + rng.integers(0, span, size=batch_size, dtype=np.int64)
+        offsets = tirer_positions(rng, batch_size, self._zones(split), seq_len + 1, nom=split)
         fenetres = np.stack([self._read(int(o), seq_len + 1) for o in offsets])
         masques = np.stack([self._read_mask(int(o), seq_len + 1) for o in offsets])
         return fenetres, masques
@@ -331,17 +354,21 @@ class TokenStore:
         de façon déterministe, pas échantillonner au hasard — sinon deux
         évaluations successives ne sont pas comparables.
         """
-        start, stop = self._split_bounds(split)
         window = seq_len + 1
-        position, produced = start, 0
-        while position + window * batch_size <= stop:
+        positions: list[int] = []
+        produced = 0
+        # Le parcours enchaîne les zones : un lot peut donc réunir des fenêtres
+        # prélevées à des endroits éloignés du corpus. C'est voulu — chaque lot
+        # reflète alors la composition d'ensemble plutôt qu'un seul voisinage.
+        for position in parcourir(self._zones(split), window):
+            positions.append(position)
+            if len(positions) < batch_size:
+                continue
             yield (
-                np.stack([self._read(position + i * window, window) for i in range(batch_size)]),
-                np.stack(
-                    [self._read_mask(position + i * window, window) for i in range(batch_size)]
-                ),
+                np.stack([self._read(p, window) for p in positions]),
+                np.stack([self._read_mask(p, window) for p in positions]),
             )
-            position += window * batch_size
+            positions.clear()
             produced += 1
             if limit is not None and produced >= limit:
                 return
