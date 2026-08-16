@@ -37,3 +37,9 @@ __pycache__/
 
 # Journaux de sessions planifiées : produits par les agents, jamais du code.
 /logs/
+
+# Scripts jetables, fabriqués pour un enchaînement ponctuel. Le préfixe `_` les
+# marque comme tels : ils contiennent souvent des chemins absolus résolus au
+# moment où on les écrit, et n'ont aucune raison d'être versionnés. L'un d'eux
+# est parti dans un `git add -A` et a publié un chemin de poste personnel.
+/scripts/_*.sh
