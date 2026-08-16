@@ -145,7 +145,7 @@ def build_trainer(raw_config: dict[str, Any], *, artifact: Artifact) -> Trainer:
     log.info("Machine : %s", describe(device))
 
     tokens_dir = Path(cfg.tokens).expanduser() if cfg.tokens else find_tokens(cfg.tokens_label)
-    store = TokenStore(tokens_dir, val_tokens=cfg.eval.val_tokens)
+    store = TokenStore(tokens_dir, val_tokens=cfg.eval.val_tokens, val_blocks=cfg.eval.val_blocks)
     log.info("Corpus : %s", store.describe())
 
     model_cfg = ModelConfig(**load_config(cfg.model_config_path))

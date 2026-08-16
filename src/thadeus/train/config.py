@@ -40,6 +40,12 @@ class EvalSpec(Schema):
     every: int = 500
     batches: int = 20
     val_tokens: int = 5_000_000
+    # Nombre de blocs sur lesquels les tokens de validation sont répartis. Il
+    # décide de **ce qui est tenu à l'écart**, donc il appartient à l'identité
+    # du run au même titre que `val_tokens` : deux valeurs différentes ne
+    # retiennent pas les mêmes tokens, et comparer leurs pertes n'aurait pas
+    # de sens.
+    val_blocks: int = 64
 
 
 class TrainConfig(Schema):
@@ -158,6 +164,7 @@ class TrainConfig(Schema):
                 "schedule": schedule.get("name", "wsd"),
             },
             "val_tokens": self.eval.val_tokens,
+            "val_blocks": self.eval.val_blocks,
             # muP change l'initialisation et les taux : c'est une autre expérience.
             "mup": self.mup,
         }

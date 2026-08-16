@@ -27,17 +27,23 @@ extends = "train/medium_mup.toml"
 
 label = "continuous"
 
-# Poids hérités du run principal ; optimiseur et planificateur repartent à neuf.
-# C'est le comportement voulu : l'état d'optimiseur de `medium_mup` a été
-# accumulé pendant sa décroissance finale, à des taux quasi nuls, et ne
-# représente plus rien d'utile pour repartir à taux plein.
-init_from = "artifacts/train/medium_mup-edd1c090/checkpoints/best.pt"
+# On repart de l'état de **palier**, pas du modèle recuit.
+#
+# Le recuit (pas 14 550, perplexité 22,45) est le meilleur modèle mesuré, mais
+# c'est un mauvais point de départ : un modèle dont le taux d'apprentissage est
+# retombé à zéro a convergé dans un creux étroit, et le relancer à taux plein
+# le fait remonter plus haut qu'un modèle laissé en palier. On l'a observé en
+# repartant de `medium_mup`, également recuit.
+#
+# `plateau-13252.pt` a été mis de côté hors du dossier `checkpoints/` avant le
+# recuit, précisément pour que la rotation `keep_last` ne puisse pas l'effacer.
+init_from = "artifacts/train/continuous-9e0687da/plateau-13252.pt"
 
-# À faire pointer vers `thadeus_v2` après chaque régénération du corpus. Comme
-# les données font partie de `identity()`, changer cette valeur ouvre un nouveau
-# segment — d'où la régénération hebdomadaire plutôt que quotidienne : chaque
-# segment repaye une remise à zéro de l'optimiseur.
-tokens_label = "thadeus_v1"
+# Corpus régénéré le 2026-08-16 : 8,95 Md de tokens contre 5,40, soit 48 tokens
+# par paramètre disponibles au lieu de 29. Les données faisant partie de
+# `identity()`, ce changement ouvre un **nouveau segment** — l'optimiseur repart
+# à neuf, ce qui est le coût assumé d'une régénération.
+tokens_label = "thadeus_v2"
 
 total_steps = 120_000    # horizon, pas une cible ; voir en-tête
 
@@ -60,6 +66,11 @@ decay_fraction = 0.0     # palier permanent — voir en-tête
 
 [eval]
 every = 1_000
+# 64 blocs répartis sur toute la longueur du corpus, et non plus une tranche
+# finale : la composition dérive le long du fichier, et la queue de
+# `thadeus_v1` contenait 27 % de code contre 12 % ailleurs. Mesuré sur v2 après
+# correctif : 6 % de part et d'autre.
+val_blocks = 64
 # 50 lots x 8 x 1024 = 410 k tokens, soit 4 % du split au lieu de 1,6 %. Les
 # fenêtres étant tirées au hasard à graine fixe, il s'agit d'un échantillon
 # aléatoire figé : l'agrandir réduit son biais sans coûter en comparabilité.
