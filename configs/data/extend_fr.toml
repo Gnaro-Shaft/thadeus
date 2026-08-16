@@ -1,43 +1,49 @@
-# Extension du volume français.
+# Extension du volume français — FineWeb-2 seul.
 #
-# La collecte initiale a buté sur ses `limit` : 911 M de tokens de FineWeb-2 FR
-# pour 1 364 M visés, 308 M de Wikipédia pour 909 M. Ces plafonds étaient
-# prudents ; les sources, elles, se comptent en téraoctets.
+# **Wikipédia FR a été retirée le 2026-08-16, sur mesure.** Elle compte ~2,6 M
+# d'articles au total et on en prélevait 1,4 M par nuit : au troisième passage
+# il ne restait presque plus rien de neuf. L'assemblage de `thadeus_v2` l'a
+# chiffré sans ambiguïté, à la déduplication :
 #
-# Point technique : on relit les MÊMES datasets avec une **graine de mélange
-# différente**. `IterableDataset.shuffle` mélange aussi l'ordre des shards, donc
-# une autre graine lit d'autres fichiers en premier et donne un échantillon
-# substantiellement différent. Le recouvrement résiduel est absorbé par la
-# déduplication exacte lors de l'assemblage — elle est faite pour ça.
+#     wikipedia_fr_d14   733,8 M visés -> 310,2 M retenus   (-58 %)
+#     wikipedia_fr_d15   902,8 M visés ->  46,7 M retenus   (-95 %)
+#     fineweb_fr_d14    1059,1 M visés -> 953,6 M retenus   (-10 %)
+#     fineweb_fr_d15    1052,9 M visés -> 751,5 M retenus   (-29 %)
+#
+# Une source épuisée ne coûte pas seulement de la bande passante : elle fait
+# travailler la déduplication pour rien et gonfle les rapports de volumes qui
+# n'atteindront jamais le corpus. Wikipédia reste présente dans `thadeus_v2`
+# via les collectes déjà faites — c'est sa **ré-extraction** qui n'a plus de
+# sens, pas son contenu.
+#
+# `limit` double en compensation : sans cela, retirer 45 % du plan diviserait
+# par deux le volume d'une nuit. FineWeb-2 français se compte en centaines de
+# milliards de tokens, le plafond reste très en deçà de la source.
+#
+# La graine du flux n'est pas écrite ici : elle dérive de `seed` du corpus et du
+# label de la source (voir `data/pipeline.py`). Une graine en dur figeait la
+# tranche prélevée, et cinq collectes s'étaient révélées identiques à 98-99 %.
+# C'est ce qui rend la variation quotidienne effective — et la section
+# `nouveaute` de `report.json` le vérifie à chaque fois.
 
 extends = "data/fr_first.toml"
 
 label = "extend_fr"
-total_tokens = 2_500_000_000
 
-# La graine du flux n'est plus écrite ici : elle dérive de `seed` du corpus
-# et du label de la source (voir data/pipeline.py). Coder une graine en dur
-# figeait la tranche prélevée — deux collectes rendaient les mêmes documents.
+# Ajusté à ce que la source rend réellement : 1,4 M de documents ont donné
+# 1,06 Md de tokens, donc 2,8 M en donnent ~2,1 Md. Viser plus haut ne
+# produirait qu'un avertissement de déficit à chaque collecte — et un
+# avertissement qui se déclenche toujours finit par ne plus être lu.
+total_tokens = 2_000_000_000
+
 [[sources]]
 name = "huggingface"
 label = "fineweb_fr_extra"
-weight = 0.55
+weight = 1.0
 filters = "fr_text"
 [sources.options]
 dataset = "HuggingFaceFW/fineweb-2"
 config = "fra_Latn"
 lang = "fr"
-limit = 1_400_000
-shuffle_buffer = 10_000
-
-[[sources]]
-name = "huggingface"
-label = "wikipedia_fr_extra"
-weight = 0.45
-filters = "fr_text"
-[sources.options]
-dataset = "wikimedia/wikipedia"
-config = "20231101.fr"
-lang = "fr"
-limit = 1_400_000    # Wikipédia FR compte ~2,6 M d'articles
+limit = 2_800_000
 shuffle_buffer = 10_000
