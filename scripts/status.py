@@ -123,17 +123,29 @@ def section_corpus(depuis_jours: int) -> None:
     else:
         print(f"\n  ⚠️  aucune collecte nouvelle depuis {depuis_jours} jours")
 
-    # Le taux de doublons est le signal qui dit quand cesser de puiser aux mêmes
-    # sources : il monte quand on retire des tranches de plus en plus proches.
-    dernier = max(acheves, key=lambda r: (r[1] or {}).get("created_at", ""))
-    rapport = _charge(dernier[0] / "report.json") or {}
-    dedup = rapport.get("dedup") or {}
-    if dedup:
-        vus = dedup.get("seen") or dedup.get("total") or 0
-        jetes = dedup.get("removed") or dedup.get("duplicates") or 0
-        if vus:
-            taux = 100 * jetes / vus
-            print(f"\n  Doublons sur la dernière collecte : {taux:.1f} % ({dernier[0].name})")
+    # **La nouveauté, pas la déduplication interne.** Cette dernière ne dit que
+    # ce qu'une collecte contient de doublons d'elle-même — elle valait 0,0 %
+    # pendant les cinq nuits où les collectes étaient identiques entre elles.
+    # Le signal utile est le recouvrement avec ce qu'on possédait déjà, et sa
+    # montée annonce l'épuisement d'une source.
+    print("\n  Apport des dernières collectes :")
+    datees = sorted(
+        (
+            (p, m)
+            for p, m in acheves
+            # Un **assemblage** relit des artefacts déjà possédés : son
+            # recouvrement est de 100 % par construction, et l'afficher comme
+            # une alerte revient à s'alarmer d'un comportement voulu.
+            if (m or {}).get("created_at") and not _est_assemblage(m)
+        ),
+        key=lambda r: r[1]["created_at"],
+    )[-4:]
+    for repertoire, meta in datees:
+        n = (_charge(repertoire / "report.json") or {}).get("nouveaute") or {}
+        r = n.get("recouvrement_max")
+        verdict = "non mesuré" if r is None else f"{100 * r:5.1f} % déjà possédé"
+        alerte = " ⚠️" if r is not None and r >= 0.5 else ""
+        print(f"    {repertoire.name:32s} {verdict}{alerte}   {_age(meta['created_at'])}")
 
 
 def _corpus_tokenise() -> None:
@@ -161,15 +173,32 @@ def _corpus_tokenise() -> None:
 
     chemin, meta = max(corpus, key=lambda c: c[1]["n_tokens"])
     taille = meta["n_tokens"]
+    label = chemin.name.rsplit("-", 1)[0]
     print(f"\n  Corpus tokenisé : {chemin.name}   {format_tokens(taille)} tokens")
 
-    vus = _tokens_traites()
+    vus = _tokens_traites(label)
     if vus:
         couverture = 1 - math.exp(-vus / taille)
         print(
-            f"    couverture ≈ {100 * couverture:.0f} %"
+            f"    lu par l'entraînement : {format_tokens(vus)}"
+            f"   ·   couverture ≈ {100 * couverture:.1f} %"
             f"   ·   jamais lu ≈ {format_tokens(taille * (1 - couverture))}"
         )
+    else:
+        # Les segments antérieurs à cette correction ne consignaient pas leur
+        # corpus : plutôt que de leur attribuer des tokens au hasard, on le dit.
+        print("    lu par l'entraînement : inconnu (renseigné dès la prochaine session)")
+
+
+def _est_assemblage(meta: dict) -> bool:
+    """Vrai si l'artefact ne fait que relire des corpus existants.
+
+    Une collecte tire d'une source externe ; un assemblage recompose ce qu'on a
+    déjà. Les deux produisent un corpus, mais seule la première peut apporter
+    de la nouveauté — les juger sur le même critère n'aurait pas de sens.
+    """
+    sources = (meta.get("config") or {}).get("sources") or []
+    return bool(sources) and all(s.get("name") == "shards" for s in sources)
 
 
 def _pas_des_checkpoints(run: Path) -> int:
@@ -186,16 +215,31 @@ def _pas_des_checkpoints(run: Path) -> int:
     return max(pas, default=0)
 
 
-def _tokens_traites() -> int:
-    """Total de tokens traités, tous runs d'entraînement confondus."""
+def _tokens_traites(corpus: str | None = None) -> int:
+    """Tokens traités, restreints à ceux lus sur ``corpus`` si précisé.
+
+    **Additionner tous les runs est faux dès qu'un corpus a été régénéré** :
+    les segments antérieurs ont lu d'autres données. Le rapport annonçait ainsi
+    50 % de couverture sur un corpus neuf qui n'en avait vu que 5 %, ce qui
+    laissait croire qu'il ne restait presque plus rien à lire.
+
+    Les runs antérieurs à cette correction n'ont pas consigné leur corpus ; ils
+    sont comptés comme n'appartenant à aucun, plutôt que d'être attribués au
+    hasard à celui qu'on regarde.
+    """
     base = ARTIFACT_ROOT / "train"
     if not base.is_dir():
         return 0
     total = 0
     for run in base.iterdir():
-        pertes = [m for m in _lignes_metriques(run / "metrics.jsonl") if "tokens_seen" in m]
-        if pertes:
-            total += pertes[-1]["tokens_seen"]
+        lignes = _lignes_metriques(run / "metrics.jsonl")
+        if corpus is not None:
+            declares = {m["corpus"] for m in lignes if "corpus" in m}
+            if corpus not in declares:
+                continue
+        avec_tokens = [m for m in lignes if "tokens_seen" in m]
+        if avec_tokens:
+            total += avec_tokens[-1]["tokens_seen"]
     return total
 
 

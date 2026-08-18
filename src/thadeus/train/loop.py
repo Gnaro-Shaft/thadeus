@@ -279,6 +279,12 @@ def train(raw_config: dict[str, Any], *, resume: bool = True) -> Artifact:
         format_tokens(cfg.total_steps * tokens_per_step),
     )
 
+    # Le corpus lu est consigné dans les métriques : sans lui, un rapport ne
+    # peut pas attribuer les tokens au bon corpus et additionne des segments
+    # qui n'ont pas lu les mêmes données. La couverture affichée devenait
+    # fausse d'un facteur dix après une régénération.
+    trainer.metrics.log(step=start_step, corpus=cfg.tokens_label)
+
     trainer.model.train()
     started = time.perf_counter()
     last_time = started
