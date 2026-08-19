@@ -387,6 +387,45 @@ def section_sessions() -> None:
         print(f"    {journal.name:28s} {etat:>18s}   {_age(quand)}")
 
 
+def section_echeances() -> None:
+    """Ce qui arrive, et ce qui aurait dû arriver.
+
+    Une échéance convenue de vive voix disparaît : celle du 2026-08-12 a été
+    oubliée des deux côtés, et n'a été rattrapée que par hasard. Elle a sa
+    place dans le rapport qu'on lit tous les matins, pas ailleurs.
+    """
+    fichier = Path("echeances.txt")
+    if not fichier.is_file():
+        return
+    titre("5. Échéances")
+
+    aujourdhui = datetime.now().date()
+    jalons = []
+    for ligne in fichier.read_text(encoding="utf-8").splitlines():
+        ligne = ligne.strip()
+        if not ligne or ligne.startswith("#"):
+            continue
+        date, _, texte = ligne.partition(" ")
+        try:
+            quand = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        jalons.append((quand, texte.strip()))
+
+    if not jalons:
+        print("  aucune échéance")
+        return
+    for quand, texte in sorted(jalons):
+        jours = (quand - aujourdhui).days
+        if jours < 0:
+            etat = f"EN RETARD de {-jours} j ⚠️"
+        elif jours == 0:
+            etat = "AUJOURD'HUI"
+        else:
+            etat = f"dans {jours} j"
+        print(f"    {quand}  {etat:<18s} {texte}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--depuis", type=int, default=7, help="fenêtre en jours (défaut : 7)")
@@ -399,6 +438,7 @@ def main() -> int:
     section_entrainement(args.run_label)
     section_evaluation()
     section_sessions()
+    section_echeances()
     print()
     return 0
 

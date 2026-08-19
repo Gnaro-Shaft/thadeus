@@ -1,0 +1,10 @@
+# Échéances du projet — une ligne par jalon : AAAA-MM-JJ  description
+#
+# Lu par `scripts/status.py`, qui affiche ce qui arrive et signale ce qui est
+# dépassé. Une date qui ne vit que dans une conversation finit par être
+# oubliée : celle du 2026-08-12 l'a été, et l'oubli n'a été rattrapé que par
+# hasard deux jours plus tard.
+#
+# Les lignes vides et celles commençant par # sont ignorées.
+
+2026-08-22  Lancer la décroissance sur thadeus_v2, puis évaluer contre les 22,45 de référence
